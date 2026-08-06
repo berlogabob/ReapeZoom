@@ -142,10 +142,12 @@ local function read_envelope(take, item_len)
     local ret = reaper.GetMediaItemTake_Peaks(take, PEAKRATE, t, NCH, want, 0, buf)
     local got = ret & 0xfffff
     if got < 1 then break end
+    -- the minimums block is laid out after the *requested* count, not the returned one
+    local minbase = want * NCH
     for i = 1, got do
-      local mx = math.max(math.abs(buf[(i - 1) * NCH + 1]), math.abs(buf[(i - 1) * NCH + 2]))
-      local mn = math.max(math.abs(buf[got * NCH + (i - 1) * NCH + 1]),
-                          math.abs(buf[got * NCH + (i - 1) * NCH + 2]))
+      local o = (i - 1) * NCH
+      local mx = math.max(math.abs(buf[o + 1]), math.abs(buf[o + 2]))
+      local mn = math.max(math.abs(buf[minbase + o + 1]), math.abs(buf[minbase + o + 2]))
       env[#env + 1] = math.max(mx, mn)
     end
     t = t + got / PEAKRATE
@@ -186,7 +188,7 @@ local function main()
     table.concat({
       get_setting("thresh", "-40"),
       get_setting("minGap", "8"),
-      get_setting("minSong", "45"),
+      get_setting("minSong", "90"),
       get_setting("pad", "1.0"),
       get_setting("render", "y"),
     }, ","))

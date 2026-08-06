@@ -33,16 +33,19 @@ right settings — those are documented below and the script can apply them for 
 and a fresh REAPER project defaults to 44.1. The script sets this for you if you leave the
 render option on.
 
-**2. 32-bit float.** If the waveform looks clipped, it isn't. Pull item volume down and the
-peaks reconstruct intact — that is the whole point of 32-bit float. Do not reach for a
-clip-repair plugin.
+**2. 32-bit float.** If the waveform looks clipped, it isn't. The reference recording here
+peaks at **+20.9 dBFS** — a 32-bit float file can hold samples well above full scale and the
+H1essential uses that headroom instead of clipping. Pull item volume down and the peaks
+reconstruct intact. Do not reach for a clip-repair plugin. The render normalization below
+applies a large negative gain anyway, so the exported files are correct even though the master
+meter goes red while you monitor.
 
 **3. Select the item and run the script.**
 
 ```
 Threshold (dB below item peak)   -40    lower = more tolerant of quiet passages
 Min gap between songs (s)         8     shorter than your between-song chatter
-Min song length (s)              45     longer than your longest bit of noodling
+Min song length (s)              90     longer than your longest bit of noodling
 Region padding (s)                1.0   breathing room at each end
 Set streaming render settings     y
 ```
@@ -50,6 +53,10 @@ Set streaming render settings     y
 The threshold is **relative to the item's own peak**, not absolute dBFS, so it works the same
 on a quiet capture and a hot one. Only these two knobs matter in practice: raise *min gap* if
 one song gets split in half, raise *min song length* if tuning and talking show up as regions.
+
+Leave the threshold at −40 unless the room is very noisy. Raising it to −35 or −30 does not
+find fewer false positives — it eats into the quiet intros and outros and makes regions start
+late. Use *min song length* to reject noodling instead; that's what it's for.
 
 It creates regions named `01`, `02`, … It does not split, glue, or otherwise touch the audio.
 
