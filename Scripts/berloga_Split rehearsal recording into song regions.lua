@@ -7,6 +7,7 @@
 --   [main] berloga_Split percussion recording into hits.lua
 --   [main] berloga_Build sampler preset from tracks.lua
 --   [nomain] lib/envelope.lua
+--   [nomain] lib/preset.lua
 -- @about
 --   # ReapeZoom
 --
