@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<index version="1" name="ReapeZoom" commit="11ea45959afc5062421a6610684e01024591ddda">
+<index version="1" name="ReapeZoom" commit="41f407859d03d4f1f614bfd1a8b596f7e2cc3ccb">
   <category name="Scripts">
     <reapack name="berloga_Split rehearsal recording into song regions.lua" type="script" desc="ReapeZoom">
       <metadata>
@@ -46,6 +46,16 @@ unparseable when the project name contained a double hyphen.]]></changelog>
         <source main="main" file="berloga_Build sampler preset from tracks.lua">https://github.com/berlogabob/ReapeZoom/raw/11ea45959afc5062421a6610684e01024591ddda/Scripts/berloga_Build%20sampler%20preset%20from%20tracks.lua</source>
         <source file="lib/envelope.lua">https://github.com/berlogabob/ReapeZoom/raw/11ea45959afc5062421a6610684e01024591ddda/Scripts/lib/envelope.lua</source>
         <source file="lib/preset.lua">https://github.com/berlogabob/ReapeZoom/raw/11ea45959afc5062421a6610684e01024591ddda/Scripts/lib/preset.lua</source>
+      </version>
+      <version name="2.1" author="berlogabob" time="2026-08-06T23:15:24Z">
+        <changelog><![CDATA[Report a readable message when the shared library is missing instead of
+throwing a raw Lua error.
+Document running from a repo symlink and the percussion recording recipe.]]></changelog>
+        <source main="main">https://github.com/berlogabob/ReapeZoom/raw/41f407859d03d4f1f614bfd1a8b596f7e2cc3ccb/Scripts/berloga_Split%20rehearsal%20recording%20into%20song%20regions.lua</source>
+        <source main="main" file="berloga_Split percussion recording into hits.lua">https://github.com/berlogabob/ReapeZoom/raw/41f407859d03d4f1f614bfd1a8b596f7e2cc3ccb/Scripts/berloga_Split%20percussion%20recording%20into%20hits.lua</source>
+        <source main="main" file="berloga_Build sampler preset from tracks.lua">https://github.com/berlogabob/ReapeZoom/raw/41f407859d03d4f1f614bfd1a8b596f7e2cc3ccb/Scripts/berloga_Build%20sampler%20preset%20from%20tracks.lua</source>
+        <source file="lib/envelope.lua">https://github.com/berlogabob/ReapeZoom/raw/41f407859d03d4f1f614bfd1a8b596f7e2cc3ccb/Scripts/lib/envelope.lua</source>
+        <source file="lib/preset.lua">https://github.com/berlogabob/ReapeZoom/raw/41f407859d03d4f1f614bfd1a8b596f7e2cc3ccb/Scripts/lib/preset.lua</source>
       </version>
     </reapack>
   </category>
