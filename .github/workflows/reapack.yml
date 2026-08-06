@@ -1,0 +1,34 @@
+name: Build ReaPack index
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+
+jobs:
+  index:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # reapack-index reads full history for changelogs
+
+      - uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: '3.3'
+
+      - run: gem install reapack-index
+
+      - name: Generate index.xml
+        run: |
+          reapack-index --no-progress --commit --amend \
+            --name "ReapeZoom" \
+            --url-template 'https://github.com/${{ github.repository }}/raw/$commit/$path'
+
+      - name: Push
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git push || echo "nothing to push"

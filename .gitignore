@@ -1,0 +1,8 @@
+# Source audio and peak caches — the rehearsal WAV is 2 GB, the .reapeaks 74 MB
+Media/
+*.reapeaks
+
+# REAPER working files
+*.RPP-bak
+*-props.RPP
+.DS_Store
