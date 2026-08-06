@@ -1,189 +1,45 @@
--- @description Split rehearsal recording into song regions
+-- @description ReapeZoom
 -- @author berlogabob
--- @version 1.1
+-- @version 2.0
 -- @link https://github.com/berlogabob/ReapeZoom
--- @provides [main] .
+-- @provides
+--   [main] .
+--   [main] berloga_Split percussion recording into hits.lua
+--   [main] berloga_Build sampler preset from tracks.lua
+--   [nomain] lib/envelope.lua
 -- @about
---   # Split rehearsal recording into song regions
+--   # ReapeZoom
 --
---   Turns one long live/rehearsal recording into named regions, one per song,
---   ready to render straight to streaming-loudness files.
+--   Turning long Zoom-recorder captures into finished material, two ways.
 --
---   Unlike REAPER's native Dynamic Split it does not split on silence: between
---   songs a rehearsal is full of talking, tuning and noodling. Instead it finds
---   quiet gaps of a minimum length, then discards the resulting spans that are
---   too short to be a song. The threshold is relative to the item's own peak, so
---   it works on quiet 32-bit-float captures without recalibration.
+--   **Split rehearsal recording into song regions** — one long rehearsal becomes
+--   named regions, one per song, ready to render at streaming loudness. It does
+--   not split on silence: between songs a rehearsal is full of talking, tuning
+--   and noodling. It finds quiet gaps of a minimum length, then discards spans
+--   too short to be a song.
 --
---   Select the item, run, rename the regions in the Region/Marker Manager,
---   then render with bounds "All project regions" and filename `$region`.
+--   **Split percussion recording into hits** — a pass-per-sound-type recording
+--   becomes one track per sound type, one item per hit.
+--
+--   **Build sampler preset from tracks** — measures every hit, sorts it into
+--   velocity layers and round robins, lays the matrix out on the arrange grid
+--   for review, and writes both `.sfz` and `.dspreset`.
+--
+--   Thresholds are relative to the material's own peak, so they work on quiet
+--   32-bit-float captures without recalibration.
 -- @changelog
---   Read peaks from the item's project position instead of project time 0 —
---   regions were wrong for any item not starting at 0:00.
---   Derive channel count from the source instead of assuming stereo.
---   Re-running now replaces its own regions instead of duplicating them.
---   Report which render settings were changed.
+--   Ship as one package with three actions and a shared library.
+--   Add percussion hit splitting and SFZ / Decent Sampler preset building.
 
 local PEAKRATE = 20 -- envelope buckets per second
-
-----------------------------------------------------------------------
--- pure logic (no reaper.* in here, so it is testable standalone)
-----------------------------------------------------------------------
-
--- env: array of linear amplitudes, one per bucket, at `rate` buckets/second.
--- opts: thresh (dB below peak), minGap, minSong, pad (all seconds).
--- returns array of {s=, e=} in seconds relative to the start of env.
-local function find_songs(env, rate, opts)
-  local n = #env
-  if n == 0 then return {} end
-
-  -- sliding-window max: a rest or a note decay inside a song is not a gap
-  -- ponytail: O(n * window) = 2.3M ops for a 91-min take, instant. Monotonic
-  -- deque only if a multi-hour recording ever feels slow.
-  local half = math.max(1, math.floor(rate * 0.5))
-  local smooth = {}
-  for i = 1, n do
-    local m = 0
-    for j = math.max(1, i - half), math.min(n, i + half) do
-      if env[j] > m then m = env[j] end
-    end
-    smooth[i] = m
-  end
-
-  local peak = 0
-  for i = 1, n do if env[i] > peak then peak = env[i] end end
-  if peak <= 0 then return {} end
-  local limit = peak * 10 ^ (opts.thresh / 20)
-
-  -- collect gaps: runs below the limit lasting at least minGap
-  local minGapBuckets = math.max(1, math.floor(opts.minGap * rate))
-  local gaps, run = {}, nil
-  for i = 1, n do
-    if smooth[i] < limit then
-      run = run or i
-    elseif run then
-      if i - run >= minGapBuckets then gaps[#gaps + 1] = { run, i - 1 } end
-      run = nil
-    end
-  end
-  if run and n + 1 - run >= minGapBuckets then gaps[#gaps + 1] = { run, n } end
-
-  -- spans between the gaps are candidate songs
-  local spans, cursor = {}, 1
-  for _, g in ipairs(gaps) do
-    if g[1] > cursor then spans[#spans + 1] = { cursor, g[1] - 1 } end
-    cursor = g[2] + 1
-  end
-  if cursor <= n then spans[#spans + 1] = { cursor, n } end
-
-  local songs = {}
-  for k, sp in ipairs(spans) do
-    local a, b = sp[1], sp[2]
-    if (b - a + 1) / rate >= opts.minSong then
-      -- Pad into the surrounding quiet, but at most halfway to the neighbouring
-      -- span, so regions can never overlap however large the padding.
-      local prev_end = k > 1 and spans[k - 1][2] or 0
-      local next_start = spans[k + 1] and spans[k + 1][1] or (n + 1)
-      local s = a - math.min(opts.pad * rate, (a - prev_end - 1) / 2)
-      local e = b + math.min(opts.pad * rate, (next_start - b - 1) / 2)
-      songs[#songs + 1] = { s = (s - 1) / rate, e = e / rate }
-    end
-  end
-
-  return songs
-end
-
-----------------------------------------------------------------------
--- standalone self-check: `lua "<this file>"`
-----------------------------------------------------------------------
-
-if not reaper then
-  local rate = 20
-  local env = {}
-  local function fill(seconds, amp)
-    for _ = 1, seconds * rate do env[#env + 1] = amp end
-  end
-  fill(60, 0.8)   -- song 1
-  fill(12, 0.001) -- real gap
-  fill(45, 0.8)   -- song 2, first half
-  fill(3, 0.001)  -- short dip mid-song: must NOT split
-  fill(45, 0.8)   -- song 2, second half
-  fill(20, 0.001) -- real gap
-  fill(10, 0.8)   -- chatter/noodling: too short, must be dropped
-
-  local songs = find_songs(env, rate, { thresh = -40, minGap = 8, minSong = 45, pad = 1 })
-  assert(#songs == 2, ("expected 2 songs, got %d"):format(#songs))
-  assert(math.abs(songs[1].e - songs[1].s - 62) < 2,
-    ("song 1 length %.1f, expected ~62 (60 + padding)"):format(songs[1].e - songs[1].s))
-  assert(math.abs(songs[2].e - songs[2].s - 95) < 2,
-    ("song 2 length %.1f, expected ~95 (45+3+45 + padding)"):format(songs[2].e - songs[2].s))
-  assert(songs[2].s > 70, "song 2 must start after the first gap")
-
-  -- regions must stay inside the item and never overlap, however big the padding
-  for _, pad in ipairs { 0, 1, 5, 60 } do
-    local r = find_songs(env, rate, { thresh = -40, minGap = 8, minSong = 45, pad = pad })
-    local len = #env / rate
-    for i, x in ipairs(r) do
-      assert(x.s >= 0 and x.e <= len, ("pad=%d region %d out of bounds"):format(pad, i))
-      assert(x.e > x.s, ("pad=%d region %d is empty"):format(pad, i))
-      if i > 1 then assert(x.s >= r[i - 1].e, ("pad=%d regions %d/%d overlap"):format(pad, i - 1, i)) end
-    end
-  end
-
-  -- degenerate inputs
-  assert(#find_songs({}, rate, { thresh = -40, minGap = 8, minSong = 45, pad = 1 }) == 0)
-  local silent = {}
-  for _ = 1, 100 * rate do silent[#silent + 1] = 0 end
-  assert(#find_songs(silent, rate, { thresh = -40, minGap = 8, minSong = 45, pad = 1 }) == 0)
-
-  print("ok")
-  return
-end
-
-----------------------------------------------------------------------
--- REAPER side
-----------------------------------------------------------------------
-
 local EXT = "ReapeZoom"
+
+local env_lib = ({ reaper.get_action_context() })[2]:match("^(.*)[/\\]") .. "/lib/envelope.lua"
+local E = dofile(env_lib)
 
 local function get_setting(key, default)
   local v = reaper.GetExtState(EXT, key)
   return v ~= "" and v or default
-end
-
-local function read_envelope(take, item_pos, item_len)
-  -- Reads the already-built .reapeaks cache, so a 2 GB file costs nothing.
-  -- starttime is PROJECT time, not item-relative -- see saull_Peak envelope
-  -- generator.lua and BirdBird's waveform_peaks.lua, which both pass D_POSITION.
-  -- Buffer layout is maximums block, then minimums block, then an optional
-  -- extra block; reserve all three, it costs nothing.
-  local CHUNK = 4096
-  local NCH = math.min(2, reaper.GetMediaSourceNumChannels(reaper.GetMediaItemTake_Source(take)))
-  if NCH < 1 then return {} end
-  local buf = reaper.new_array(CHUNK * NCH * 3)
-  local env, t = {}, 0
-
-  while t < item_len do
-    local want = math.min(CHUNK, math.ceil((item_len - t) * PEAKRATE))
-    if want < 1 then break end
-    buf.clear()
-    local ret = reaper.GetMediaItemTake_Peaks(take, PEAKRATE, item_pos + t, NCH, want, 0, buf)
-    local got = ret & 0xfffff
-    if got < 1 then break end
-    -- the minimums block is laid out after the *requested* count, not the returned one
-    local minbase = want * NCH
-    for i = 1, got do
-      local o = (i - 1) * NCH
-      local v = 0
-      for c = 1, NCH do
-        v = math.max(v, math.abs(buf[o + c]), math.abs(buf[minbase + o + c]))
-      end
-      env[#env + 1] = v
-    end
-    t = t + got / PEAKRATE
-  end
-
-  return env
 end
 
 -- Regions this script created, so re-running replaces them instead of
@@ -267,30 +123,30 @@ local function main()
   for v in csv:gmatch("[^,]*") do f[#f + 1] = v end
   local opts = {
     thresh = tonumber(f[1]), minGap = tonumber(f[2]),
-    minSong = tonumber(f[3]), pad = tonumber(f[4]),
+    minSpan = tonumber(f[3]), pad = tonumber(f[4]),
   }
   local do_render = (f[5] or ""):lower():sub(1, 1) == "y"
-  if not (opts.thresh and opts.minGap and opts.minSong and opts.pad) then
+  if not (opts.thresh and opts.minGap and opts.minSpan and opts.pad) then
     reaper.MB("All four numeric fields are required.", "Split rehearsal", 0)
     return
   end
   reaper.SetExtState(EXT, "thresh", tostring(opts.thresh), true)
   reaper.SetExtState(EXT, "minGap", tostring(opts.minGap), true)
-  reaper.SetExtState(EXT, "minSong", tostring(opts.minSong), true)
+  reaper.SetExtState(EXT, "minSong", tostring(opts.minSpan), true)
   reaper.SetExtState(EXT, "pad", tostring(opts.pad), true)
   reaper.SetExtState(EXT, "render", do_render and "y" or "n", true)
 
   local item_pos = reaper.GetMediaItemInfo_Value(item, "D_POSITION")
   local item_len = reaper.GetMediaItemInfo_Value(item, "D_LENGTH")
 
-  local env = read_envelope(take, item_pos, item_len)
+  local env = E.read_envelope(take, item_pos, item_len, PEAKRATE)
   if #env == 0 then
     reaper.MB("Could not read peaks for this item. Let REAPER finish building them and retry.",
       "Split rehearsal", 0)
     return
   end
 
-  local songs = find_songs(env, PEAKRATE, opts)
+  local songs = E.find_spans(env, PEAKRATE, opts)
   if #songs == 0 then
     reaper.MB("No songs found. Try a lower threshold or a shorter minimum song length.",
       "Split rehearsal", 0)

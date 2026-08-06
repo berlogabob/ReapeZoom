@@ -16,7 +16,12 @@ jobs:
       - name: Script self-check
         run: |
           sudo apt-get update -qq && sudo apt-get install -y -qq lua5.4
-          for f in Scripts/*.lua; do
+          # Every script must parse. The action scripts are REAPER glue and
+          # cannot run headless; the testable logic all lives in Scripts/lib.
+          for f in Scripts/*.lua Scripts/lib/*.lua; do
+            luac5.4 -p "$f" || { echo "syntax error in $f"; exit 1; }
+          done
+          for f in Scripts/lib/*.lua; do
             echo "== $f"
             out=$(lua5.4 "$f")
             [ "$out" = "ok" ] || { echo "expected 'ok', got '$out'"; exit 1; }
