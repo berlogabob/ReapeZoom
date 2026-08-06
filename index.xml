@@ -1,16 +1,18 @@
 <?xml version="1.0" encoding="utf-8"?>
-<index version="1" name="ReapeZoom" commit="c06ee16aed587ce02d6fd89f46bb71e54dc4162e">
+<index version="1" name="ReapeZoom" commit="20d05665194abdb0d9958037798a8ae6ac87ccca">
   <category name="Scripts">
-    <reapack name="berloga_Split rehearsal recording into song regions.lua" type="script" desc="Split rehearsal recording into song regions">
+    <reapack name="berloga_Split rehearsal recording into song regions.lua" type="script" desc="ReapeZoom">
       <metadata>
         <description><![CDATA[{\rtf1\ansi\deff0{\fonttbl{\f0 \fswiss Helvetica;}{\f1 \fmodern Courier;}}
 {\colortbl;\red255\green0\blue0;\red0\green0\blue255;}
 \widowctrl\hyphauto
 
-{\pard \ql \f0 \fs24 \sa180 \li0 \fi0 \outlinelevel0 \b \fs34 Split rehearsal recording into song regions\par}
-{\pard \ql \f0 \fs24 \sa180 \li0 \fi0 Turns one long live/rehearsal recording into named regions, one per song, ready to render straight to streaming-loudness files.\par}
-{\pard \ql \f0 \fs24 \sa180 \li0 \fi0 Unlike REAPER's native Dynamic Split it does not split on silence: between songs a rehearsal is full of talking, tuning and noodling. Instead it finds quiet gaps of a minimum length, then discards the resulting spans that are too short to be a song. The threshold is relative to the item's own peak, so it works on quiet 32-bit-float captures without recalibration.\par}
-{\pard \ql \f0 \fs24 \sa180 \li0 \fi0 Select the item, run, rename the regions in the Region/Marker Manager, then render with bounds "All project regions" and filename {\f1 \fs24 $region}.\par}
+{\pard \ql \f0 \fs24 \sa180 \li0 \fi0 \outlinelevel0 \b \fs34 ReapeZoom\par}
+{\pard \ql \f0 \fs24 \sa180 \li0 \fi0 Turning long Zoom-recorder captures into finished material, two ways.\par}
+{\pard \ql \f0 \fs24 \sa180 \li0 \fi0 {\b Split rehearsal recording into song regions} \u8212- one long rehearsal becomes named regions, one per song, ready to render at streaming loudness. It does not split on silence: between songs a rehearsal is full of talking, tuning and noodling. It finds quiet gaps of a minimum length, then discards spans too short to be a song.\par}
+{\pard \ql \f0 \fs24 \sa180 \li0 \fi0 {\b Split percussion recording into hits} \u8212- a pass-per-sound-type recording becomes one track per sound type, one item per hit.\par}
+{\pard \ql \f0 \fs24 \sa180 \li0 \fi0 {\b Build sampler preset from tracks} \u8212- measures every hit, sorts it into velocity layers and round robins, lays the matrix out on the arrange grid for review, and writes both {\f1 \fs24 .sfz} and {\f1 \fs24 .dspreset}.\par}
+{\pard \ql \f0 \fs24 \sa180 \li0 \fi0 Thresholds are relative to the material's own peak, so they work on quiet 32-bit-float captures without recalibration.\par}
 }
 ]]></description>
         <link rel="website">https://github.com/berlogabob/ReapeZoom</link>
@@ -26,6 +28,14 @@ Derive channel count from the source instead of assuming stereo.
 Re-running now replaces its own regions instead of duplicating them.
 Report which render settings were changed.]]></changelog>
         <source main="main">https://github.com/berlogabob/ReapeZoom/raw/c06ee16aed587ce02d6fd89f46bb71e54dc4162e/Scripts/berloga_Split%20rehearsal%20recording%20into%20song%20regions.lua</source>
+      </version>
+      <version name="2.0" author="berlogabob" time="2026-08-06T23:04:26Z">
+        <changelog><![CDATA[Ship as one package with three actions and a shared library.
+Add percussion hit splitting and SFZ / Decent Sampler preset building.]]></changelog>
+        <source main="main">https://github.com/berlogabob/ReapeZoom/raw/20d05665194abdb0d9958037798a8ae6ac87ccca/Scripts/berloga_Split%20rehearsal%20recording%20into%20song%20regions.lua</source>
+        <source main="main" file="berloga_Split percussion recording into hits.lua">https://github.com/berlogabob/ReapeZoom/raw/20d05665194abdb0d9958037798a8ae6ac87ccca/Scripts/berloga_Split%20percussion%20recording%20into%20hits.lua</source>
+        <source main="main" file="berloga_Build sampler preset from tracks.lua">https://github.com/berlogabob/ReapeZoom/raw/20d05665194abdb0d9958037798a8ae6ac87ccca/Scripts/berloga_Build%20sampler%20preset%20from%20tracks.lua</source>
+        <source file="lib/envelope.lua">https://github.com/berlogabob/ReapeZoom/raw/20d05665194abdb0d9958037798a8ae6ac87ccca/Scripts/lib/envelope.lua</source>
       </version>
     </reapack>
   </category>
