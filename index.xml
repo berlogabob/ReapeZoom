@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<index version="1" name="ReapeZoom" commit="2dbc136fe4b84a0bad336c9b184cfd7355e3829c">
+<index version="1" name="ReapeZoom" commit="c06ee16aed587ce02d6fd89f46bb71e54dc4162e">
   <category name="Scripts">
     <reapack name="berloga_Split rehearsal recording into song regions.lua" type="script" desc="Split rehearsal recording into song regions">
       <metadata>
@@ -13,10 +13,19 @@
 {\pard \ql \f0 \fs24 \sa180 \li0 \fi0 Select the item, run, rename the regions in the Region/Marker Manager, then render with bounds "All project regions" and filename {\f1 \fs24 $region}.\par}
 }
 ]]></description>
+        <link rel="website">https://github.com/berlogabob/ReapeZoom</link>
       </metadata>
       <version name="1.0" author="berloga" time="2026-08-06T20:43:25Z">
         <changelog><![CDATA[Initial release]]></changelog>
         <source main="main">https://github.com/berloga/ReapeZoom/raw/2dbc136fe4b84a0bad336c9b184cfd7355e3829c/Scripts/berloga_Split%20rehearsal%20recording%20into%20song%20regions.lua</source>
+      </version>
+      <version name="1.1" author="berlogabob" time="2026-08-06T22:37:29Z">
+        <changelog><![CDATA[Read peaks from the item's project position instead of project time 0 —
+regions were wrong for any item not starting at 0:00.
+Derive channel count from the source instead of assuming stereo.
+Re-running now replaces its own regions instead of duplicating them.
+Report which render settings were changed.]]></changelog>
+        <source main="main">https://github.com/berlogabob/ReapeZoom/raw/c06ee16aed587ce02d6fd89f46bb71e54dc4162e/Scripts/berloga_Split%20rehearsal%20recording%20into%20song%20regions.lua</source>
       </version>
     </reapack>
   </category>
