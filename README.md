@@ -107,7 +107,7 @@ lua "Scripts/berloga_Split rehearsal recording into song regions.lua"   # prints
 and add a `@changelog` entry, commit, then:
 
 ```sh
-gem install reapack-index    # once
+gem install reapack-index && brew install pandoc   # once; pandoc renders @about to RTF
 reapack-index --commit --amend --name ReapeZoom \
   --url-template 'https://github.com/berlogabob/ReapeZoom/raw/$commit/$path'
 git push

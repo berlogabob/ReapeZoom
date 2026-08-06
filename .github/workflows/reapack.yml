@@ -9,7 +9,7 @@ jobs:
   check:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           fetch-depth: 0 # reapack-index reads full history
 
@@ -30,5 +30,6 @@ jobs:
       # locally (see README) so there is only ever one source of truth.
       - name: Validate ReaPack metadata
         run: |
+          sudo apt-get install -y -qq pandoc  # reapack-index renders @about to RTF via pandoc
           gem install reapack-index
           reapack-index --check
