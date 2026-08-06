@@ -2,7 +2,8 @@
 Media/
 *.reapeaks
 
-# REAPER working files
+# REAPER working files -- this repo is the package, not the user's project
+*.RPP
 *.RPP-bak
 *-props.RPP
 .DS_Store

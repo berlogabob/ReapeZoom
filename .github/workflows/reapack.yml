@@ -1,34 +1,34 @@
-name: Build ReaPack index
+name: Check
 
 on:
   push:
-    branches: [main]
-
-permissions:
-  contents: write
+  pull_request:
+  workflow_dispatch:
 
 jobs:
-  index:
+  check:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
         with:
-          fetch-depth: 0 # reapack-index reads full history for changelogs
+          fetch-depth: 0 # reapack-index reads full history
+
+      - name: Script self-check
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y -qq lua5.4
+          for f in Scripts/*.lua; do
+            echo "== $f"
+            out=$(lua5.4 "$f")
+            [ "$out" = "ok" ] || { echo "expected 'ok', got '$out'"; exit 1; }
+          done
 
       - uses: ruby/setup-ruby@v1
         with:
           ruby-version: '3.3'
 
-      - run: gem install reapack-index
-
-      - name: Generate index.xml
+      # Validates the @-headers. Does not write index.xml -- that is generated
+      # locally (see README) so there is only ever one source of truth.
+      - name: Validate ReaPack metadata
         run: |
-          reapack-index --no-progress --commit --amend \
-            --name "ReapeZoom" \
-            --url-template 'https://github.com/${{ github.repository }}/raw/$commit/$path'
-
-      - name: Push
-        run: |
-          git config user.name  "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git push || echo "nothing to push"
+          gem install reapack-index
+          reapack-index --check
