@@ -1,6 +1,6 @@
 -- @description ReapeZoom
 -- @author berlogabob
--- @version 2.0
+-- @version 2.0.1
 -- @link https://github.com/berlogabob/ReapeZoom
 -- @provides
 --   [main] .
@@ -29,8 +29,8 @@
 --   Thresholds are relative to the material's own peak, so they work on quiet
 --   32-bit-float captures without recalibration.
 -- @changelog
---   Ship as one package with three actions and a shared library.
---   Add percussion hit splitting and SFZ / Decent Sampler preset building.
+--   Fix an illegal "--" inside the .dspreset XML comment, which made presets
+--   unparseable when the project name contained a double hyphen.
 
 local PEAKRATE = 20 -- envelope buckets per second
 local EXT = "ReapeZoom"
