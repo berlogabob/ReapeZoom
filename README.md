@@ -10,7 +10,7 @@ but nothing in it is specific to that recorder.
 ReaPack → **Import repositories** →
 
 ```
-https://github.com/berloga/ReapeZoom/raw/main/index.xml
+https://github.com/berlogabob/ReapeZoom/raw/main/index.xml
 ```
 
 Then Browse packages → install **Split rehearsal recording into song regions**.
