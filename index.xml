@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<index version="1" name="ReapeZoom" commit="b22b552c209406dbffeff360c5caa57aac67d2de">
+  <category name="Scripts">
+    <reapack name="berloga_Split rehearsal recording into song regions.lua" type="script" desc="Split rehearsal recording into song regions">
+      <metadata>
+        <description><![CDATA[{\rtf1\ansi\deff0{\fonttbl{\f0 \fswiss Helvetica;}{\f1 \fmodern Courier;}}
+{\colortbl;\red255\green0\blue0;\red0\green0\blue255;}
+\widowctrl\hyphauto
+
+{\pard \ql \f0 \fs24 \sa180 \li0 \fi0 \outlinelevel0 \b \fs34 Split rehearsal recording into song regions\par}
+{\pard \ql \f0 \fs24 \sa180 \li0 \fi0 Turns one long live/rehearsal recording into named regions, one per song, ready to render straight to streaming-loudness files.\par}
+{\pard \ql \f0 \fs24 \sa180 \li0 \fi0 Unlike REAPER's native Dynamic Split it does not split on silence: between songs a rehearsal is full of talking, tuning and noodling. Instead it finds quiet gaps of a minimum length, then discards the resulting spans that are too short to be a song. The threshold is relative to the item's own peak, so it works on quiet 32-bit-float captures without recalibration.\par}
+{\pard \ql \f0 \fs24 \sa180 \li0 \fi0 Select the item, run, rename the regions in the Region/Marker Manager, then render with bounds "All project regions" and filename {\f1 \fs24 $region}.\par}
+}
+]]></description>
+      </metadata>
+      <version name="1.0" author="berloga" time="2026-08-06T20:43:25Z">
+        <changelog><![CDATA[Initial release]]></changelog>
+        <source main="main">https://github.com/berloga/ReapeZoom/raw/b22b552c209406dbffeff360c5caa57aac67d2de/Scripts/berloga_Split%20rehearsal%20recording%20into%20song%20regions.lua</source>
+      </version>
+    </reapack>
+  </category>
+</index>
