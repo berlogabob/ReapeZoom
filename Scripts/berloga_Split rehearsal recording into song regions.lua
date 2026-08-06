@@ -1,6 +1,6 @@
 -- @description ReapeZoom
 -- @author berlogabob
--- @version 2.0.1
+-- @version 2.1
 -- @link https://github.com/berlogabob/ReapeZoom
 -- @provides
 --   [main] .
@@ -29,14 +29,31 @@
 --   Thresholds are relative to the material's own peak, so they work on quiet
 --   32-bit-float captures without recalibration.
 -- @changelog
---   Fix an illegal "--" inside the .dspreset XML comment, which made presets
---   unparseable when the project name contained a double hyphen.
+--   Report a readable message when the shared library is missing instead of
+--   throwing a raw Lua error.
+--   Document running from a repo symlink and the percussion recording recipe.
 
 local PEAKRATE = 20 -- envelope buckets per second
 local EXT = "ReapeZoom"
 
-local env_lib = ({ reaper.get_action_context() })[2]:match("^(.*)[/\\]") .. "/lib/envelope.lua"
-local E = dofile(env_lib)
+-- Load a sibling library, with a readable message instead of a raw Lua error
+-- when the install is incomplete -- by far the most common way this fails.
+local function require_lib(name)
+  local dir = ({ reaper.get_action_context() })[2]:match("^(.*)[/\\]")
+  local path = dir .. "/lib/" .. name
+  local fh = io.open(path, "r")
+  if not fh then
+    reaper.MB(("Missing library:\n%s\n\nReinstall ReapeZoom via ReaPack, or if you are running " ..
+      "from a symlink, make sure it points at the whole Scripts folder rather than a single file.")
+      :format(path), "ReapeZoom", 0)
+    return nil
+  end
+  fh:close()
+  return dofile(path)
+end
+
+local E = require_lib("envelope.lua")
+if not E then return end
 
 local function get_setting(key, default)
   local v = reaper.GetExtState(EXT, key)

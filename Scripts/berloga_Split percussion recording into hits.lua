@@ -10,8 +10,24 @@ local PASSRATE = 20  -- buckets/s for finding the passes
 local HITRATE = 400  -- buckets/s for finding transients inside a pass
 local EXT = "ReapeZoom"
 
-local dir = ({ reaper.get_action_context() })[2]:match("^(.*)[/\\]")
-local E = dofile(dir .. "/lib/envelope.lua")
+-- Load a sibling library, with a readable message instead of a raw Lua error
+-- when the install is incomplete -- by far the most common way this fails.
+local function require_lib(name)
+  local dir = ({ reaper.get_action_context() })[2]:match("^(.*)[/\\]")
+  local path = dir .. "/lib/" .. name
+  local fh = io.open(path, "r")
+  if not fh then
+    reaper.MB(("Missing library:\n%s\n\nReinstall ReapeZoom via ReaPack, or if you are running " ..
+      "from a symlink, make sure it points at the whole Scripts folder rather than a single file.")
+      :format(path), "ReapeZoom", 0)
+    return nil
+  end
+  fh:close()
+  return dofile(path)
+end
+
+local E = require_lib("envelope.lua")
+if not E then return end
 
 local function get_setting(key, default)
   local v = reaper.GetExtState(EXT, key)

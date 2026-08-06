@@ -112,9 +112,22 @@ same matrix.
 
 ## Workflow
 
-**1. Record one pass per sound type.** 20 kicks, pause, 20 taps, pause, 20 slaps. Vary how hard
-you hit — that variation *is* the velocity layers. The pause is what separates the sound types;
-a second or two is plenty.
+**1. Record one pass per sound type.**
+
+| | |
+|---|---|
+| Sound types | one contiguous pass each — cajon **kick** (centre, full hand), **tap** (edge, fingertips), **slap** (top corner), **clap** |
+| Hits per type | ~20: five each at soft / medium / hard / very hard |
+| Order within a pass | **mixed, not a rising ramp** — a misdetected layer should stand out, not hide in the sequence |
+| Between hits | ~0.5 s (the detector merges anything closer than 80 ms) |
+| Between passes | ~3 s of silence (the default gap setting is 1.5 s) |
+| Room | quiet — the threshold is relative to each pass's own peak, so noise raises the floor and eats soft hits |
+| Mic | 30–50 cm back, 32-bit float on, ignore apparent clipping |
+| Total | ~3–4 minutes |
+
+The force variation *is* the velocity layers — 20 hits supports the default 4 layers × 5 round
+robins. Serious commercial libraries target roughly 6 × 5; record more hits and raise the layer
+count if you want that.
 
 **2. Select the item → `Split percussion recording into hits`.** Passes become tracks
 (`Sound 1`, `Sound 2`…), hits become items named with their peak in dB.
@@ -199,5 +212,18 @@ CI does not generate the index — it only checks. On every push it runs the sel
 - Take playrate is assumed to be 1.0. A time-stretched take will produce misplaced regions.
 - Sources with more than two channels are read as their first two.
 - Velocity layering uses peak, not RMS or LUFS. Soft hits with long decays may land a layer low.
-- Push events don't trigger CI on this repo for reasons I never pinned down; run it with
-  `gh workflow run Check`.
+
+### Running from the repo
+
+To test edits without a version bump and reinstall, symlink the whole `Scripts` folder:
+
+```sh
+ln -s "$PWD/Scripts" ~/Library/Application\ Support/REAPER/Scripts/ReapeZoom-dev
+```
+
+Then Actions → Show action list → New action → Load ReaScript, and pick the three
+`berloga_*.lua`. Nothing in `lib/` is an action — don't load those.
+
+It must be a **directory** symlink, not one per file: the scripts locate `lib/` relative to
+themselves. And the name must not be `ReapeZoom` — that's where ReaPack installs the package,
+and it would write into the repo.
