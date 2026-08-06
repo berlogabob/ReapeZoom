@@ -21,8 +21,8 @@ Then Browse packages → install **ReapeZoom**. It registers three actions.
 
 ## What's in here
 
-Three actions and a shared library. Everything else is a native REAPER feature that just needs
-the right settings — the scripts apply them for you.
+Three actions over two shared libraries. Everything else is a native REAPER feature that just
+needs the right settings — the scripts apply them for you.
 
 | Job | How |
 |---|---|
@@ -179,9 +179,24 @@ default for a hand percussion instrument; record more hits and raise it.
 - **Delay compensation.** One track, one item, no plugins. REAPER's plugin delay compensation
   is automatic and already correct.
 - Both become real the day you add a second source — a phone video, a board feed, a second
-  recorder. That's a separate script; drop it in `Scripts/` and CI will pick it up.
+  recorder. That's a separate script, not yet written.
 - **Classify hit types automatically.** Telling a kick from a slap is an audio-ML problem. The
   one-pass-per-sound-type convention makes it unnecessary.
+
+## Status
+
+Honest state of testing, because "it's on GitHub and CI is green" is not the same as "it works":
+
+| | |
+|---|---|
+| Gap, onset and layer detection | **verified** — self-checks, plus the rehearsal detector run against a real 91-minute recording (14 songs, 2:17–5:59 each) |
+| Generated `.dspreset` | **verified** — parses under a real XML parser, velocity 1–127 covered with no gaps or overlaps |
+| Generated `.sfz` | structurally asserted, **not yet loaded in a sampler** |
+| Everything that calls `reaper.*` | **not yet run.** No action has been executed inside REAPER |
+
+The REAPER-side code — item and track creation, region handling, the grid layout, render setup —
+is written against the documented API and reviewed, but unexecuted. Treat v2.x as untested until
+that changes.
 
 ## Development
 
@@ -207,11 +222,18 @@ CI does not generate the index — it only checks. On every push it runs the sel
 `reapack-index --check` to validate the headers, so there is one source of truth for
 `index.xml` and no chance of local and remote diverging.
 
-### Known limits
+### Adding a script
 
-- Take playrate is assumed to be 1.0. A time-stretched take will produce misplaced regions.
-- Sources with more than two channels are read as their first two.
-- Velocity layering uses peak, not RMS or LUFS. Soft hits with long decays may land a layer low.
+This is **one** ReaPack package with several actions, not one package per script — ReaPack has no
+dependency mechanism, so two packages cannot both `@provides` the same library file. Two
+consequences, both of which have already caused bugs here:
+
+- A new file is invisible until it is listed in `@provides` in
+  `berloga_Split rehearsal recording into song regions.lua` (the package's primary file). Dropping
+  a `.lua` into `Scripts/` is **not** enough — it will not be indexed, and a library left out
+  makes the installed package crash on load. Use `[main]` for actions, `[nomain]` for libraries.
+- `reapack-index` only re-reads a file when `@version` changes. Fixing a library without bumping
+  the version leaves the index pointing at the old commit, so users keep getting the bug.
 
 ### Running from the repo
 
@@ -227,3 +249,9 @@ Then Actions → Show action list → New action → Load ReaScript, and pick th
 It must be a **directory** symlink, not one per file: the scripts locate `lib/` relative to
 themselves. And the name must not be `ReapeZoom` — that's where ReaPack installs the package,
 and it would write into the repo.
+
+### Known limits
+
+- Take playrate is assumed to be 1.0. A time-stretched take will produce misplaced regions.
+- Sources with more than two channels are read as their first two.
+- Velocity layering uses peak, not RMS or LUFS. Soft hits with long decays may land a layer low.
