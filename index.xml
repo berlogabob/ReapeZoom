@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<index version="1" name="ReapeZoom" commit="b22b552c209406dbffeff360c5caa57aac67d2de">
+<index version="1" name="ReapeZoom" commit="2dbc136fe4b84a0bad336c9b184cfd7355e3829c">
   <category name="Scripts">
     <reapack name="berloga_Split rehearsal recording into song regions.lua" type="script" desc="Split rehearsal recording into song regions">
       <metadata>
@@ -16,7 +16,7 @@
       </metadata>
       <version name="1.0" author="berloga" time="2026-08-06T20:43:25Z">
         <changelog><![CDATA[Initial release]]></changelog>
-        <source main="main">https://github.com/berloga/ReapeZoom/raw/b22b552c209406dbffeff360c5caa57aac67d2de/Scripts/berloga_Split%20rehearsal%20recording%20into%20song%20regions.lua</source>
+        <source main="main">https://github.com/berloga/ReapeZoom/raw/2dbc136fe4b84a0bad336c9b184cfd7355e3829c/Scripts/berloga_Split%20rehearsal%20recording%20into%20song%20regions.lua</source>
       </version>
     </reapack>
   </category>
