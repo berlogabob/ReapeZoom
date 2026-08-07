@@ -1,6 +1,6 @@
 -- @description ReapeZoom
 -- @author berlogabob
--- @version 2.1
+-- @version 2.1.1
 -- @link https://github.com/berlogabob/ReapeZoom
 -- @provides
 --   [main] .
@@ -29,9 +29,9 @@
 --   Thresholds are relative to the material's own peak, so they work on quiet
 --   32-bit-float captures without recalibration.
 -- @changelog
---   Report a readable message when the shared library is missing instead of
---   throwing a raw Lua error.
---   Document running from a repo symlink and the percussion recording recipe.
+--   Fix regions and hits landing at the wrong time for any item not at 0:00.
+--   find_spans returns offsets from the start of the envelope, not project
+--   time; both splitters now convert explicitly.
 
 local PEAKRATE = 20 -- envelope buckets per second
 local EXT = "ReapeZoom"
@@ -165,6 +165,9 @@ local function main()
   end
 
   local songs = E.find_spans(env, PEAKRATE, opts)
+  -- find_spans measures from the start of the envelope, which began at
+  -- item_pos. Convert to project time once, here.
+  for _, s in ipairs(songs) do s.s = item_pos + s.s; s.e = item_pos + s.e end
   if #songs == 0 then
     reaper.MB("No songs found. Try a lower threshold or a shorter minimum song length.",
       "Split rehearsal", 0)
@@ -177,7 +180,6 @@ local function main()
   local removed = clear_own_regions()
   local ids = {}
   for i, s in ipairs(songs) do
-    -- s.s/s.e are already project time: read_envelope started at item_pos
     ids[#ids + 1] = reaper.AddProjectMarker2(0, true, s.s, s.e, ("%02d"):format(i), -1, 0)
   end
   reaper.SetProjExtState(0, EXT, "regions", table.concat(ids, ","))

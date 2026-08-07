@@ -10,7 +10,11 @@ local M = {}
 
 -- env: array of linear amplitudes, one per bucket, at `rate` buckets/second.
 -- opts: thresh (dB below peak), minGap, minSpan, pad (all seconds).
--- returns array of {s=, e=} in seconds relative to the start of env.
+--
+-- Returns {s=, e=} in seconds **from the start of env**, NOT project time.
+-- read_envelope's item_pos does not leak into these numbers -- callers that
+-- want project time must add it back themselves. Getting this wrong is
+-- invisible whenever the item happens to sit at 0:00, so it is asserted below.
 function M.find_spans(env, rate, opts)
   local n = #env
   if n == 0 then return {} end
@@ -212,6 +216,17 @@ function M.selftest()
       if i > 1 then assert(x.s >= r[i - 1].e, ("pad=%d spans %d/%d overlap"):format(pad, i - 1, i)) end
     end
   end
+
+  -- the coordinate frame is the start of env, never project time
+  local lead = {}
+  for _ = 1, 5 * rate do lead[#lead + 1] = 0.001 end   -- 5 s of quiet first
+  for _ = 1, 100 * rate do lead[#lead + 1] = 0.8 end
+  local ls = M.find_spans(lead, rate, { thresh = -40, minGap = 2, minSpan = 45, pad = 0 })
+  assert(#ls == 1, "expected one span after the lead-in")
+  -- the ±0.5 s smoothing window legitimately pulls the boundary earlier; the
+  -- point here is that the number is ~5 and not ~0 or an item position
+  assert(math.abs(ls[1].s - 5) <= 0.6,
+    ("span starts at %.2f s into env, expected ~5 -- offsets are env-relative"):format(ls[1].s))
 
   assert(#M.find_spans({}, rate, o) == 0)
   local silent = {}

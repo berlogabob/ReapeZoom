@@ -101,6 +101,10 @@ local function main()
       "Split percussion", 0)
     return
   end
+  -- find_spans measures from the start of the envelope, which began at
+  -- item_pos. Convert to project time once, here, so everything below --
+  -- the per-pass envelope reads, the hit positions -- is in one frame.
+  for _, p in ipairs(passes) do p.s = item_pos + p.s; p.e = item_pos + p.e end
 
   reaper.Undo_BeginBlock()
   reaper.PreventUIRefresh(1)
