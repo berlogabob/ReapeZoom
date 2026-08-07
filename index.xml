@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<index version="1" name="ReapeZoom" commit="b296033f591ff4bf976638174a780122da7ba06e">
+<index version="1" name="ReapeZoom" commit="8136d12c358cf363bbd3c8665f38a7daa776b96c">
   <category name="Scripts">
     <reapack name="berloga_Split rehearsal recording into song regions.lua" type="script" desc="ReapeZoom">
       <metadata>
@@ -10,6 +10,8 @@
 {\pard \ql \f0 \fs24 \sa180 \li0 \fi0 \outlinelevel0 \b \fs34 ReapeZoom\par}
 {\pard \ql \f0 \fs24 \sa180 \li0 \fi0 Turning long Zoom-recorder captures into finished material, two ways.\par}
 {\pard \ql \f0 \fs24 \sa180 \li0 \fi0 {\b Split rehearsal recording into song regions} \u8212- one long rehearsal becomes named regions, one per song, ready to render at streaming loudness. It does not split on silence: between songs a rehearsal is full of talking, tuning and noodling. It finds quiet gaps of a minimum length, then discards spans too short to be a song.\par}
+{\pard \ql \f0 \fs24 \sa180 \li0 \fi0 {\b Ride levels into automation items} \u8212- evens out level variation {\i inside} each song with a slow, visible, editable gain curve. Not the same as loudness normalization, which sets one static gain for a whole file.\par}
+{\pard \ql \f0 \fs24 \sa180 \li0 \fi0 {\b Check stereo and phase} \u8212- polarity, L/R balance, DC offset and mono compatibility, with the polarity fix applied on request.\par}
 {\pard \ql \f0 \fs24 \sa180 \li0 \fi0 {\b Split percussion recording into hits} \u8212- a pass-per-sound-type recording becomes one track per sound type, one item per hit.\par}
 {\pard \ql \f0 \fs24 \sa180 \li0 \fi0 {\b Build sampler preset from tracks} \u8212- measures every hit, sorts it into velocity layers and round robins, lays the matrix out on the arrange grid for review, and writes both {\f1 \fs24 .sfz} and {\f1 \fs24 .dspreset}.\par}
 {\pard \ql \f0 \fs24 \sa180 \li0 \fi0 Thresholds are relative to the material's own peak, so they work on quiet 32-bit-float captures without recalibration.\par}
@@ -66,6 +68,21 @@ time; both splitters now convert explicitly.]]></changelog>
         <source main="main" file="berloga_Build sampler preset from tracks.lua">https://github.com/berlogabob/ReapeZoom/raw/b296033f591ff4bf976638174a780122da7ba06e/Scripts/berloga_Build%20sampler%20preset%20from%20tracks.lua</source>
         <source file="lib/envelope.lua">https://github.com/berlogabob/ReapeZoom/raw/b296033f591ff4bf976638174a780122da7ba06e/Scripts/lib/envelope.lua</source>
         <source file="lib/preset.lua">https://github.com/berlogabob/ReapeZoom/raw/b296033f591ff4bf976638174a780122da7ba06e/Scripts/lib/preset.lua</source>
+      </version>
+      <version name="2.2" author="berlogabob" time="2026-08-07T08:29:27Z">
+        <changelog><![CDATA[Add "Ride levels into automation items": corrects level variation inside a
+song, which render normalization does not do.
+Add "Check stereo and phase": polarity, balance, DC offset, mono
+compatibility, with an optional polarity fix.]]></changelog>
+        <source main="main">https://github.com/berlogabob/ReapeZoom/raw/8136d12c358cf363bbd3c8665f38a7daa776b96c/Scripts/berloga_Split%20rehearsal%20recording%20into%20song%20regions.lua</source>
+        <source main="main" file="berloga_Ride levels into automation items.lua">https://github.com/berlogabob/ReapeZoom/raw/8136d12c358cf363bbd3c8665f38a7daa776b96c/Scripts/berloga_Ride%20levels%20into%20automation%20items.lua</source>
+        <source main="main" file="berloga_Check stereo and phase.lua">https://github.com/berlogabob/ReapeZoom/raw/8136d12c358cf363bbd3c8665f38a7daa776b96c/Scripts/berloga_Check%20stereo%20and%20phase.lua</source>
+        <source main="main" file="berloga_Split percussion recording into hits.lua">https://github.com/berlogabob/ReapeZoom/raw/8136d12c358cf363bbd3c8665f38a7daa776b96c/Scripts/berloga_Split%20percussion%20recording%20into%20hits.lua</source>
+        <source main="main" file="berloga_Build sampler preset from tracks.lua">https://github.com/berlogabob/ReapeZoom/raw/8136d12c358cf363bbd3c8665f38a7daa776b96c/Scripts/berloga_Build%20sampler%20preset%20from%20tracks.lua</source>
+        <source file="lib/envelope.lua">https://github.com/berlogabob/ReapeZoom/raw/8136d12c358cf363bbd3c8665f38a7daa776b96c/Scripts/lib/envelope.lua</source>
+        <source file="lib/level.lua">https://github.com/berlogabob/ReapeZoom/raw/8136d12c358cf363bbd3c8665f38a7daa776b96c/Scripts/lib/level.lua</source>
+        <source file="lib/preset.lua">https://github.com/berlogabob/ReapeZoom/raw/8136d12c358cf363bbd3c8665f38a7daa776b96c/Scripts/lib/preset.lua</source>
+        <source file="lib/stereo.lua">https://github.com/berlogabob/ReapeZoom/raw/8136d12c358cf363bbd3c8665f38a7daa776b96c/Scripts/lib/stereo.lua</source>
       </version>
     </reapack>
   </category>
