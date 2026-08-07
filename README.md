@@ -198,6 +198,27 @@ The REAPER-side code — item and track creation, region handling, the grid layo
 is written against the documented API and reviewed, but unexecuted. Treat v2.x as untested until
 that changes.
 
+## Verifying a change
+
+**Always test with the item at a non-zero position.** This codebase has produced the same class
+of bug twice, and both times it was invisible at 0:00:
+
+- `GetMediaItemTake_Peaks`' `starttime` is *project* time, not item-relative (the API docs don't
+  say so).
+- `find_spans` returns offsets *from the start of the envelope*, not project time.
+
+Get either wrong and everything still looks perfect for an item starting at 0:00, because the
+two frames coincide there. Both bugs shipped. The check that catches them:
+
+1. Put a long recording on a track and **drag it to 5:00**.
+2. Run *Split rehearsal recording into song regions*.
+3. Every region must start after 5:00. If the first one lands at 1:20 instead of 6:20, a
+   coordinate frame is being mixed up.
+4. Move the item back to 0:00, re-run, and confirm the times shift by exactly 5:00.
+
+The library self-check pins the pure half of this — a lead-in of silence must produce a span
+starting at ~5 s — but only running it in REAPER covers the `reaper.*` side.
+
 ## Development
 
 The action scripts are REAPER glue and can't run headless. All the testable logic lives in
