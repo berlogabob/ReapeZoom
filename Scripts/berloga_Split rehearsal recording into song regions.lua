@@ -1,13 +1,17 @@
 -- @description ReapeZoom
 -- @author berlogabob
--- @version 2.1.1
+-- @version 2.2
 -- @link https://github.com/berlogabob/ReapeZoom
 -- @provides
 --   [main] .
+--   [main] berloga_Ride levels into automation items.lua
+--   [main] berloga_Check stereo and phase.lua
 --   [main] berloga_Split percussion recording into hits.lua
 --   [main] berloga_Build sampler preset from tracks.lua
 --   [nomain] lib/envelope.lua
+--   [nomain] lib/level.lua
 --   [nomain] lib/preset.lua
+--   [nomain] lib/stereo.lua
 -- @about
 --   # ReapeZoom
 --
@@ -19,6 +23,13 @@
 --   and noodling. It finds quiet gaps of a minimum length, then discards spans
 --   too short to be a song.
 --
+--   **Ride levels into automation items** — evens out level variation *inside*
+--   each song with a slow, visible, editable gain curve. Not the same as
+--   loudness normalization, which sets one static gain for a whole file.
+--
+--   **Check stereo and phase** — polarity, L/R balance, DC offset and mono
+--   compatibility, with the polarity fix applied on request.
+--
 --   **Split percussion recording into hits** — a pass-per-sound-type recording
 --   becomes one track per sound type, one item per hit.
 --
@@ -29,9 +40,10 @@
 --   Thresholds are relative to the material's own peak, so they work on quiet
 --   32-bit-float captures without recalibration.
 -- @changelog
---   Fix regions and hits landing at the wrong time for any item not at 0:00.
---   find_spans returns offsets from the start of the envelope, not project
---   time; both splitters now convert explicitly.
+--   Add "Ride levels into automation items": corrects level variation inside a
+--   song, which render normalization does not do.
+--   Add "Check stereo and phase": polarity, balance, DC offset, mono
+--   compatibility, with an optional polarity fix.
 
 local PEAKRATE = 20 -- envelope buckets per second
 local EXT = "ReapeZoom"

@@ -181,6 +181,37 @@ function M.read_envelope(take, item_pos, item_len, peakrate)
   return env
 end
 
+-- Same read, but keeping the channels apart and preserving the sign of the
+-- minimums. Returns { [ch] = { {mx=, mn=}, ... } }, nch.
+-- The min/max asymmetry is what makes a free DC offset estimate possible.
+function M.read_channels(take, item_pos, item_len, peakrate)
+  local CHUNK = 4096
+  local NCH = math.min(2, reaper.GetMediaSourceNumChannels(reaper.GetMediaItemTake_Source(take)))
+  if NCH < 1 then return {}, 0 end
+  local buf = reaper.new_array(CHUNK * NCH * 3)
+  local out, t = {}, 0
+  for c = 1, NCH do out[c] = {} end
+
+  while t < item_len do
+    local want = math.min(CHUNK, math.ceil((item_len - t) * peakrate))
+    if want < 1 then break end
+    buf.clear()
+    local ret = reaper.GetMediaItemTake_Peaks(take, peakrate, item_pos + t, NCH, want, 0, buf)
+    local got = ret & 0xfffff
+    if got < 1 then break end
+    local minbase = want * NCH
+    for i = 1, got do
+      local o = (i - 1) * NCH
+      for c = 1, NCH do
+        out[c][#out[c] + 1] = { mx = buf[o + c], mn = buf[minbase + o + c] }
+      end
+    end
+    t = t + got / peakrate
+  end
+
+  return out, NCH
+end
+
 ----------------------------------------------------------------------
 -- self-check
 ----------------------------------------------------------------------

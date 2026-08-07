@@ -17,16 +17,18 @@ ReaPack → **Import repositories** →
 https://github.com/berlogabob/ReapeZoom/raw/main/index.xml
 ```
 
-Then Browse packages → install **ReapeZoom**. It registers three actions.
+Then Browse packages → install **ReapeZoom**. It registers five actions.
 
 ## What's in here
 
-Three actions over two shared libraries. Everything else is a native REAPER feature that just
+Five actions over four shared libraries. Everything else is a native REAPER feature that just
 needs the right settings — the scripts apply them for you.
 
 | Job | How |
 |---|---|
 | Find the songs in a 90-minute rehearsal | `Split rehearsal recording into song regions` |
+| Even out level *inside* a song | `Ride levels into automation items` |
+| Polarity, balance, DC, mono compatibility | `Check stereo and phase` |
 | Split a sampling session into individual hits | `Split percussion recording into hits` |
 | Velocity layers, round robins, SFZ + Decent Sampler | `Build sampler preset from tracks` |
 | Loudness for Spotify etc. | native render normalization (LUFS-I + true-peak brickwall) |
@@ -73,7 +75,26 @@ It creates regions named `01`, `02`, … It does not split, glue, or otherwise t
 **4. Rename.** `View → Region/Marker Manager`, type the real titles. Those names become the
 filenames.
 
-**5. Render.** `Cmd+Alt+R`. With the render option left on, this is already set:
+**5. Check the stereo** — `Check stereo and phase`. Reports correlation, L/R balance, DC offset
+and mono compatibility, and offers to flip the polarity if the channels are inverted. See below
+for why this matters even on a single-mic recording.
+
+**6. Ride the levels** — `Ride levels into automation items`. One automation item per song region
+on the track volume envelope.
+
+```
+Max boost (dB)                    6
+Max cut (dB)                      6
+Response (s)                     15   how far back it looks; longer = gentler
+Max change (dB/s)               0.5   a full 6 dB move takes 12 s, so it cannot pump
+Noise floor (dB below target)    20   below this it holds instead of boosting
+```
+
+Then **look at the envelope**. That's the whole point of using automation items rather than a
+compressor — the curve is visible and draggable, and you can toggle one song's item off to A/B
+it. On the reference recording these defaults produce ~80 points per song.
+
+**7. Render.** `Cmd+Alt+R`. With the render option left on, this is already set:
 
 | Setting | Value |
 |---|---|
@@ -94,6 +115,44 @@ of true-peak headroom plays back correctly everywhere and survives lossy transco
 inter-sample clipping.
 
 Deliver 24-bit WAV to your distributor. Not MP3 — they make the MP3.
+
+### Riding is not normalization
+
+They solve different problems and you want both:
+
+| | Fixes | Scope |
+|---|---|---|
+| **Render normalization** | how loud the song is | one static gain for the whole file |
+| **Level riding** | how loud the *chorus* is against the *verse* | a curve, moment to moment |
+
+Normalization cannot help a quiet verse against a loud chorus — it moves the whole file by one
+number. A compressor could, but it reacts blind, can't look ahead, and colours the sound. An
+offline curve sees the whole song, adds no distortion, and is visible and editable afterwards.
+That's what automation items are for.
+
+The two knobs that matter: **response** (how far back it looks — longer is gentler) and **max
+change** (how fast the gain may move). The defaults are deliberately slow. If you can *hear* the
+riding, lengthen the response or lower the max change.
+
+The **noise floor** setting is the one that stops it ruining a live recording: below that level
+the gain *holds* instead of boosting. Without it, every gap between songs gets the room noise
+ridden up to full volume.
+
+### Why check stereo on a single-mic recording
+
+The H1essential's X/Y capsules are coincident, so there is no timing offset between L and R and
+nothing to align. But four things can still be wrong, and all are measurable:
+
+- **Polarity inversion** — a cable or hardware fault. The stereo image nearly vanishes when
+  summed to mono. Fixed on request via `utility/chanmix2`.
+- **L/R imbalance** — the band stood off-centre. Reported, never auto-corrected: a band really
+  can be louder on one side, and "fixing" that would be wrong.
+- **DC offset** — wastes headroom and thumps at edits. Reported with the fix (20 Hz high-pass).
+- **Mono compatibility** — Spotify plays in mono on plenty of devices, so this is a release
+  concern, not a purist's footnote.
+
+Correlation is estimated from 20 half-second windows sampled across the file rather than decoding
+every frame; the report says how much was measured.
 
 ---
 
@@ -176,8 +235,8 @@ default for a hand percussion instrument; record more hits and raise it.
 - **Phase correction.** The H1essential's X/Y capsules are coincident: L and R hit the same
   point in space at the same time. There is no phase error to correct on a single-recorder
   stereo capture.
-- **Delay compensation.** One track, one item, no plugins. REAPER's plugin delay compensation
-  is automatic and already correct.
+- **Time-align the stereo pair.** Coincident capsules see the sound at the same instant; there
+  is no offset to remove. Polarity, balance and DC *are* checked — see above.
 - Both become real the day you add a second source — a phone video, a board feed, a second
   recorder. That's a separate script, not yet written.
 - **Classify hit types automatically.** Telling a kick from a slap is an audio-ML problem. The
@@ -225,8 +284,7 @@ The action scripts are REAPER glue and can't run headless. All the testable logi
 `Scripts/lib/`, each file with a self-check:
 
 ```sh
-lua Scripts/lib/envelope.lua   # gap + onset detection, velocity layering -> "ok"
-lua Scripts/lib/preset.lua     # SFZ and dspreset writers -> "ok"
+for f in Scripts/lib/*.lua; do lua "$f"; done   # each prints "ok"
 ```
 
 `index.xml` is generated locally from the `@` headers — never edit it by hand. Bump `@version`
