@@ -70,6 +70,28 @@ Leave the threshold at −40 unless the room is very noisy. Raising it to −35 
 find fewer false positives — it eats into the quiet intros and outros and makes regions start
 late. Use *min song length* to reject noodling instead; that's what it's for.
 
+**It shows you the answer before committing.** After the settings dialog you get what nearby
+thresholds would actually find:
+
+```
+Threshold      Songs    Shortest - longest
+
+-50 dB         1       34:25 - 34:25
+-45 dB         1       34:25 - 34:25
+-40 dB         1       34:25 - 34:25   << your setting
+-35 dB         7        2:23 - 5:58
+-30 dB         7        2:23 - 5:58
+```
+
+**Yes** creates the regions, **No** takes you back to the settings with your numbers still in
+them, **Cancel** does nothing. That example is the case worth having it for: at −40 you would
+get one 34-minute region and reasonably conclude the detector was broken, when −35 finds the
+seven songs. A noisy room raises the floor, and this is how you see that in one step instead of
+by running and undoing.
+
+The sweep re-runs detection five times on peaks that are already in memory — about 90 ms on a
+91-minute take, so it is not worth avoiding.
+
 It creates regions named `01`, `02`, … It does not split, glue, or otherwise touch the audio.
 
 **4. Rename.** `View → Region/Marker Manager`, type the real titles. Those names become the
@@ -80,7 +102,10 @@ and mono compatibility, and offers to flip the polarity if the channels are inve
 for why this matters even on a single-mic recording.
 
 **6. Ride the levels** — `Ride levels into automation items`. One automation item per song region
-on the track volume envelope.
+on the track volume envelope. Select several items and it measures them all, then rides each one.
+
+It **measures first**: before the dialog you get peak, loud, quiet and the dynamic range between
+them, per item. Pick the target from those numbers instead of guessing.
 
 ```
 Max boost (dB)                    6
@@ -88,11 +113,16 @@ Max cut (dB)                      6
 Response (s)                     15   how far back it looks; longer = gentler
 Max change (dB/s)               0.5   a full 6 dB move takes 12 s, so it cannot pump
 Noise floor (dB below target)    20   below this it holds instead of boosting
+Target range (dB; 0 = flat)     ...   prefilled from what it just measured
 ```
 
 Then **look at the envelope**. That's the whole point of using automation items rather than a
 compressor — the curve is visible and draggable, and you can toggle one song's item off to A/B
 it. On the reference recording these defaults produce ~80 points per song.
+
+It only ever rewrites automation items it created itself. If the envelope holds anything else —
+an item you made, or points you drew by hand inside a region — it stops and says so rather than
+overwriting your work.
 
 **7. Render.** `Cmd+Alt+R`. With the render option left on, this is already set:
 
@@ -130,13 +160,27 @@ number. A compressor could, but it reacts blind, can't look ahead, and colours t
 offline curve sees the whole song, adds no distortion, and is visible and editable afterwards.
 That's what automation items are for.
 
-The two knobs that matter: **response** (how far back it looks — longer is gentler) and **max
-change** (how fast the gain may move). The defaults are deliberately slow. If you can *hear* the
-riding, lengthen the response or lower the max change.
+It measures first. Before the dialog appears you get the numbers for every selected item — peak,
+how loud the loud parts are, how quiet the quiet parts are, and the **dynamic range** between
+them. Pick the target from those numbers rather than guessing.
+
+The three knobs that matter:
+
+- **target range** — how much of that gap to leave behind, in dB. `0` flattens everything to one
+  level. Setting it to the range you were just shown does nothing at all. Anything larger is
+  clamped: this tames dynamics, it never expands them.
+- **response** — how far back it looks. Longer is gentler.
+- **max change** — how fast the gain may move.
+
+The defaults are deliberately slow. If you can *hear* the riding, lengthen the response or lower
+the max change. Note that **max boost** and **max cut** still cap the correction, so asking for a
+very small target range on very dynamic material will stop at the cap rather than reach the target.
 
 The **noise floor** setting is the one that stops it ruining a live recording: below that level
 the gain *holds* instead of boosting. Without it, every gap between songs gets the room noise
 ridden up to full volume.
+
+Select several items and it measures them all, then rides each one.
 
 ### Why check stereo on a single-mic recording
 
@@ -144,7 +188,9 @@ The H1essential's X/Y capsules are coincident, so there is no timing offset betw
 nothing to align. But four things can still be wrong, and all are measurable:
 
 - **Polarity inversion** — a cable or hardware fault. The stereo image nearly vanishes when
-  summed to mono. Fixed on request via `utility/chanmix2`.
+  summed to mono. Fixed on request via `utility/chanmix2`, added **to the take**, not the track —
+  the diagnosis came from one item, and a track FX would invert every other item sharing that
+  track as well.
 - **L/R imbalance** — the band stood off-centre. Reported, never auto-corrected: a band really
   can be louder on one side, and "fixing" that would be wrong.
 - **DC offset** — wastes headroom and thumps at edits. Reported with the fix (20 Hz high-pass).
@@ -152,7 +198,13 @@ nothing to align. But four things can still be wrong, and all are measurable:
   concern, not a purist's footnote.
 
 Correlation is estimated from 20 half-second windows sampled across the file rather than decoding
-every frame; the report says how much was measured.
+every frame; the report says how much was measured. On an item shorter than the window it reads
+the item once rather than repeatedly overrunning both ends.
+
+Re-running the check **after** the polarity fix still reports the original negative correlation.
+That is not a failed fix: the measurement reads the take's source audio through an audio
+accessor, which is upstream of take FX. Judge it by ear, or by the fact that the item now sums to
+mono properly.
 
 ---
 
@@ -201,7 +253,12 @@ Min pass length (s)                 2.0
 ```
 
 **3. Rename the tracks** to `Kick`, `Tap`, `Slap`, `Clap`. Add `[36]` to pin a MIDI note
-(`Kick [36]`); otherwise notes run upward from 36 in track order.
+(`Kick [36]`); otherwise notes run upward from 36 in track order. A pin outside 0–127 is not a
+MIDI note and is ignored rather than written into a preset no sampler will load.
+
+Track names become filenames, and two names that reduce to the same slug — `Tap & Slap` and
+`Tap / Slap` both give `Tap_Slap` — are disambiguated so one articulation cannot overwrite the
+other's samples.
 
 **4. `Build sampler preset from tracks`.** Measures every hit, sorts it into velocity layers and
 round robins, and lays the matrix out on the grid: **column = velocity layer**, position within
@@ -214,8 +271,9 @@ It warns when a layer spans more than ~9 dB. That matters: round robins are mean
 differ. A wide layer produces round robins that don't match, and the fix is more layers.
 
 **5. Select All Items → Render.** Settings are already applied: selected media items, `$item`
-filenames, 24-bit WAV into `Samples/`, and **normalization off** — normalizing would erase the
-dynamics the whole matrix encodes.
+filenames, 24-bit stereo WAV into `Samples/`, and **normalization off** — normalizing would erase
+the dynamics the whole matrix encodes. Sample rate, channel count and format are all set
+explicitly, so a project last used for a mono bounce cannot quietly render the kit in mono.
 
 **6. Play it.** `<Project>.sfz` and `<Project>.dspreset` sit next to the project.
 
@@ -251,11 +309,30 @@ Honest state of testing, because "it's on GitHub and CI is green" is not the sam
 | Gap, onset and layer detection | **verified** — self-checks, plus the rehearsal detector run against a real 91-minute recording (14 songs, 2:17–5:59 each) |
 | Generated `.dspreset` | **verified** — parses under a real XML parser, velocity 1–127 covered with no gaps or overlaps |
 | Generated `.sfz` | structurally asserted, **not yet loaded in a sampler** |
-| Everything that calls `reaper.*` | **not yet run.** No action has been executed inside REAPER |
+| Input validation in every action | **verified by execution** against a REAPER stub: a negative duration or amount is refused before any undo block opens |
+| Library-load failure handling | **verified by execution** — a library that returns a non-table, or fails to parse, is reported instead of crashing mid-edit |
+| Everything else that calls `reaper.*` | **not yet run in REAPER.** Control flow is exercised against a stub; REAPER's own behaviour is not |
 
-The REAPER-side code — item and track creation, region handling, the grid layout, render setup —
-is written against the documented API and reviewed, but unexecuted. Treat v2.x as untested until
-that changes.
+The stub proves the scripts take the right path and clean up after themselves. It does **not**
+prove REAPER does what the API docs say. Item and track creation, automation-item pooling, region
+handling, the grid layout, the take-FX insert and render setup remain unexecuted against the real
+application. Treat v2.x as untested there until that changes.
+
+One question is genuinely open: whether envelope point times inside an automation item are
+relative to the item or in project time. The ReaScript docs for `InsertEnvelopePointEx`,
+`GetEnvelopePointEx`, `SetEnvelopePointEx` and `DeleteEnvelopePointRangeEx` are all silent on it.
+The code assumes item-relative, which is consistent with its own `-1 .. len+1` delete range. Until
+someone runs a probe in REAPER, that assumption is exactly that.
+
+### What the self-checks are worth
+
+Every non-trivial assertion in `Scripts/lib/` has been **mutation-tested**: the fix it guards was
+deleted, the self-check was confirmed to fail, and the fix restored. That matters because this
+project already shipped a test that could not fail — the old clamp fixture produced a curve of
+exactly 0.00 dB, so both the boost and cut clamps could be removed with CI still green.
+
+A self-check that passes whether or not the code is correct is worse than no self-check, because
+it is believed. If you add one, delete the line it protects and make sure it goes red.
 
 ## Verifying a change
 
@@ -265,6 +342,12 @@ of bug twice, and both times it was invisible at 0:00:
 - `GetMediaItemTake_Peaks`' `starttime` is *project* time, not item-relative (the API docs don't
   say so).
 - `find_spans` returns offsets *from the start of the envelope*, not project time.
+- Undecided, same family: envelope point times inside an **automation item**. Assumed
+  item-relative; undocumented either way. See *Status*.
+
+Note the pattern — every one of these is a case where the API documentation is silent and the two
+frames coincide at zero. When you touch anything that converts between times, assume this is
+happening until you have checked at a non-zero position.
 
 Get either wrong and everything still looks perfect for an item starting at 0:00, because the
 two frames coincide there. Both bugs shipped. The check that catches them:
@@ -286,6 +369,11 @@ The action scripts are REAPER glue and can't run headless. All the testable logi
 ```sh
 for f in Scripts/lib/*.lua; do lua "$f"; done   # each prints "ok"
 ```
+
+**Keep pure logic out of the action scripts.** CI runs the libraries and only syntax-checks the
+actions, so anything that lives in an action is effectively untested. When an action grows a
+function with no `reaper.*` call in it, move it to `Scripts/lib/` and assert it — that is how
+`spans_for`, `max_peak`, the filename slugs and the track-name parser got covered.
 
 `index.xml` is generated locally from the `@` headers — never edit it by hand. Bump `@version`
 and add a `@changelog` entry, commit, then:
@@ -322,7 +410,7 @@ To test edits without a version bump and reinstall, symlink the whole `Scripts` 
 ln -s "$PWD/Scripts" ~/Library/Application\ Support/REAPER/Scripts/ReapeZoom-dev
 ```
 
-Then Actions → Show action list → New action → Load ReaScript, and pick the three
+Then Actions → Show action list → New action → Load ReaScript, and pick the five
 `berloga_*.lua`. Nothing in `lib/` is an action — don't load those.
 
 It must be a **directory** symlink, not one per file: the scripts locate `lib/` relative to
@@ -331,6 +419,16 @@ and it would write into the repo.
 
 ### Known limits
 
-- Take playrate is assumed to be 1.0. A time-stretched take will produce misplaced regions.
 - Sources with more than two channels are read as their first two.
 - Velocity layering uses peak, not RMS or LUFS. Soft hits with long decays may land a layer low.
+- Riding never *expands* dynamics. A target range larger than the measured one is clamped to
+  "leave it alone".
+- **Max boost** and **max cut** still cap the correction, so a very small target range on very
+  dynamic material stops at the cap instead of reaching the target.
+- The stereo check reads pre-FX audio, so it cannot see its own polarity fix (see above).
+- Across several selected items the ride target is the **mean** of their measured ranges. Fine for
+  one item, or for items from the same session; less so for a pile of unrelated material.
+
+`Split percussion recording into hits` used to assume a take playrate of 1.0 and produced hits
+pointing at the wrong source position on a time-stretched take. It now maps offsets through the
+playrate and copies the rate and pitch settings onto each new take.

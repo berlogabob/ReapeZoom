@@ -25,7 +25,17 @@ local function require_lib(name)
     return nil
   end
   fh:close()
-  return dofile(path)
+  -- A mismatched or half-written library can load and return something that is
+  -- not a module. Truthiness alone lets that through, and the failure then
+  -- surfaces much later as "attempt to index a boolean" -- inside an undo
+  -- block, in the worst case, leaving it unclosed.
+  local ok, mod = pcall(dofile, path)
+  if not ok or type(mod) ~= "table" then
+    reaper.MB(("Library failed to load:\n%s\n\n%s\n\nReinstall ReapeZoom via ReaPack.")
+      :format(path, ok and "It did not return a module." or tostring(mod)), "ReapeZoom", 0)
+    return nil
+  end
+  return mod
 end
 
 local E = require_lib("envelope.lua")
@@ -39,17 +49,11 @@ end
 
 -- "Kick [36]" pins the note; otherwise notes run upward from 36. There is no
 -- sensible General MIDI mapping for a cajon, so nothing is guessed.
+-- The parsing itself lives in preset.lua, where the self-check can reach it --
+-- including the "[128] is not a MIDI note" case that used to reach the presets.
 local function parse_track(tr, fallback_note)
   local _, name = reaper.GetSetMediaTrackInfo_String(tr, "P_NAME", "", false)
-  local note = name:match("%[(%d+)%]")
-  name = name:gsub("%s*%[%d+%]%s*$", "")
-  if name == "" then name = ("Track %d"):format(fallback_note - 35) end
-  return name, tonumber(note) or fallback_note
-end
-
--- Filenames must survive being a path component and an XML attribute.
-local function sanitize(s)
-  return (s:gsub("[^%w%-]+", "_"):gsub("^_+", ""):gsub("_+$", ""))
+  return P.parse_name(name, fallback_note, ("Track %d"):format(fallback_note - 35))
 end
 
 local function collect_tracks()
@@ -78,10 +82,7 @@ local function hit_peak(item)
   -- ponytail: peak, not RMS or LUFS. For one-shots it tracks perceived level
   -- closely enough and needs no extension. Revisit if soft hits with long
   -- decays keep landing in the wrong layer.
-  local env = E.read_envelope(take, pos, len, ANALYSISRATE)
-  local pk = 0
-  for i = 1, #env do if env[i] > pk then pk = env[i] end end
-  return pk
+  return E.max_peak(E.read_envelope(take, pos, len, ANALYSISRATE))
 end
 
 local function apply_render_settings(samples_dir)
@@ -92,6 +93,9 @@ local function apply_render_settings(samples_dir)
   -- here is mandatory, not cosmetic.
   reaper.GetSetProjectInfo(0, "RENDER_NORMALIZE", 0, true)
   reaper.GetSetProjectInfo(0, "RENDER_SRATE", 0, true) -- project rate
+  -- Not set before, so a project left over from a mono bounce rendered every
+  -- sample in mono and both presets then pointed at those files.
+  reaper.GetSetProjectInfo(0, "RENDER_CHANNELS", 2, true)
   reaper.GetSetProjectInfo_String(0, "RENDER_PATTERN", "$item", true)
   reaper.GetSetProjectInfo_String(0, "RENDER_FILE", samples_dir, true)
   reaper.GetSetProjectInfo_String(0, "RENDER_FORMAT", "ZXZhdxgAAQ==", true) -- evaw + 0x18: WAV 24-bit
@@ -127,8 +131,13 @@ local function main()
   local nlayers = tonumber(f[1])
   local slot = tonumber(f[2])
   local do_layout = (f[3] or ""):lower():sub(1, 1) == "y"
-  if not nlayers or nlayers < 1 or not slot or slot <= 0 then
-    reaper.MB("Velocity layers must be 1 or more and the slot must be positive.", "Build preset", 0)
+  -- Whole layers only, and at most 127 of them: a fractional count produces a
+  -- layer key that #layers cannot see, and past 127 the velocity ranges run off
+  -- the end of MIDI and the presets will not load.
+  if not nlayers or nlayers < 1 or nlayers > 127 or nlayers % 1 ~= 0
+     or not slot or slot <= 0 then
+    reaper.MB("Velocity layers must be a whole number from 1 to 127, and the slot must be " ..
+      "positive.", "Build preset", 0)
     return
   end
   reaper.SetExtState(EXT, "layers", tostring(nlayers), true)
@@ -139,9 +148,18 @@ local function main()
   reaper.PreventUIRefresh(1)
 
   -- measure and classify --------------------------------------------
+  -- Slugs are worked out for all tracks together, because they have to be
+  -- unique across the whole kit: "Tap & Slap" and "Tap / Slap" reduce to the
+  -- same filename on their own and one articulation would overwrite the other.
+  local names, notes = {}, {}
+  for t, tr in ipairs(tracks) do
+    names[t], notes[t] = parse_track(tr, 35 + t)
+  end
+  local slugs = P.slugs(names)
+
   local matrix, warnings, maxrr = {}, {}, 1
   for t, tr in ipairs(tracks) do
-    local name, note = parse_track(tr, 35 + t)
+    local name, note, slug = names[t], notes[t], slugs[t]
     local items, peaks = {}, {}
     for i = 0, reaper.CountTrackMediaItems(tr) - 1 do
       local it = reaper.GetTrackMediaItem(tr, i)
@@ -175,7 +193,7 @@ local function main()
         local rr = rr_in_layer[l]
         if rr > maxrr then maxrr = rr end
         local lovel, hivel = E.velocity_range(l, n)
-        local base = ("%s_v%d_rr%d"):format(sanitize(name), l, rr)
+        local base = ("%s_v%d_rr%d"):format(slug, l, rr)
         group.samples[#group.samples + 1] =
           { file = "Samples/" .. base .. ".wav", lovel = lovel, hivel = hivel,
             seq = rr, seqlen = 0, layer = l }
@@ -211,17 +229,28 @@ local function main()
   end
 
   if do_layout then
-    -- column markers, replacing any from a previous run
+    -- Column markers, replacing the ones WE made. Matching on the name alone
+    -- would delete a user's own marker called "v1"; the ids of ours are
+    -- remembered in the project instead, the same way the rehearsal script
+    -- tracks the regions it owns.
+    local _, owned_csv = reaper.GetProjExtState(0, EXT, "layout_markers")
+    local owned = {}
+    for id in owned_csv:gmatch("%d+") do owned[tonumber(id)] = true end
+
     local i = 0
     while true do
-      local ret, isrgn, _, _, nm, idx = reaper.EnumProjectMarkers3(0, i)
+      local ret, isrgn, _, _, _, idx = reaper.EnumProjectMarkers3(0, i)
       if ret == 0 then break end
-      if not isrgn and nm:match("^v%d+$") then reaper.DeleteProjectMarker(0, idx, false)
+      if not isrgn and owned[idx] then reaper.DeleteProjectMarker(0, idx, false)
       else i = i + 1 end
     end
+
+    local ids = {}
     for l = 1, nlayers do
-      reaper.AddProjectMarker2(0, false, (l - 1) * maxrr * slot, 0, ("v%d"):format(l), -1, 0)
+      ids[#ids + 1] = reaper.AddProjectMarker2(0, false, (l - 1) * maxrr * slot, 0,
+        ("v%d"):format(l), -1, 0)
     end
+    reaper.SetProjExtState(0, EXT, "layout_markers", table.concat(ids, ","))
   end
 
   -- render setup and preset files ------------------------------------

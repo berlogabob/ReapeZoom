@@ -1,9 +1,46 @@
-# Source audio and peak caches — the rehearsal WAV is 2 GB, the .reapeaks 74 MB
-Media/
+# This repo is the script package, never the material it operates on.
+
+# Audio, anywhere. The reference rehearsal WAV alone is 2 GB.
+# Both cases are listed: the H1essential writes .WAV in capitals, and git
+# matches case-sensitively on Linux even though macOS does not.
+*.wav
+*.WAV
+*.aif
+*.AIF
+*.aiff
+*.AIFF
+*.flac
+*.FLAC
+*.mp3
+*.MP3
+*.m4a
+*.M4A
+*.ogg
+*.opus
+*.aac
+*.wv
+*.caf
+*.w64
+*.rf64
+
+# Peak caches — 74 MB for the reference recording
 *.reapeaks
+*.reapindex
+
+# Recorder and render output directories
+Media/
+render/
 
 # REAPER working files -- this repo is the package, not the user's project
 *.RPP
 *.RPP-bak
 *-props.RPP
+*.rpp-bak
 .DS_Store
+
+# Tool and build artifacts
+luac.out
+graphify-out/
+
+# Claude Code session transcripts (dated, and large)
+20??-??-??-*.txt

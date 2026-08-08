@@ -1,6 +1,6 @@
 -- @description ReapeZoom
 -- @author berlogabob
--- @version 2.2
+-- @version 2.5
 -- @link https://github.com/berlogabob/ReapeZoom
 -- @provides
 --   [main] .
@@ -40,10 +40,29 @@
 --   Thresholds are relative to the material's own peak, so they work on quiet
 --   32-bit-float captures without recalibration.
 -- @changelog
---   Add "Ride levels into automation items": corrects level variation inside a
---   song, which render normalization does not do.
---   Add "Check stereo and phase": polarity, balance, DC offset, mono
---   compatibility, with an optional polarity fix.
+--   Split rehearsal: shows what nearby thresholds would find -- song count and
+--   shortest/longest -- before creating anything, and lets you go back and
+--   change the settings without committing first.
+--   Ride levels: measures the selection first and reports peak, loud, quiet and
+--   the dynamic range between them, then takes a target range to ride toward --
+--   0 flattens as before, the measured range leaves the material alone.
+--   Ride levels: accepts several selected items instead of one.
+--   Ride levels: only reuses automation items it created itself, refuses to run
+--   over hand-drawn envelope points, and restores your track selection.
+--   Ride levels: the gain curve now ramps from neutral at both item edges
+--   instead of stepping straight to its full correction.
+--   Stereo check: the polarity fix goes on the take, not the track, so other
+--   items on the same track are no longer inverted too.
+--   Split rehearsal: sets render sample rate, channel count and WAV format,
+--   which were previously left at whatever the project last used.
+--   Split percussion: hits from a time-stretched take now map to the right
+--   source position and inherit the playback rate.
+--   Build preset: sample filenames are unique, so two similarly named tracks no
+--   longer overwrite each other; layout markers only delete their own.
+--   All scripts: reject negative durations and amounts up front, and report a
+--   broken library install instead of failing later mid-edit.
+--   Padding at the first and last song now uses the full available space, and
+--   minimum gaps round up so a gap is never shorter than the one requested.
 
 local PEAKRATE = 20 -- envelope buckets per second
 local EXT = "ReapeZoom"
@@ -61,7 +80,17 @@ local function require_lib(name)
     return nil
   end
   fh:close()
-  return dofile(path)
+  -- A mismatched or half-written library can load and return something that is
+  -- not a module. Truthiness alone lets that through, and the failure then
+  -- surfaces much later as "attempt to index a boolean" -- inside an undo
+  -- block, in the worst case, leaving it unclosed.
+  local ok, mod = pcall(dofile, path)
+  if not ok or type(mod) ~= "table" then
+    reaper.MB(("Library failed to load:\n%s\n\n%s\n\nReinstall ReapeZoom via ReaPack.")
+      :format(path, ok and "It did not return a module." or tostring(mod)), "ReapeZoom", 0)
+    return nil
+  end
+  return mod
 end
 
 local E = require_lib("envelope.lua")
@@ -108,6 +137,11 @@ local function apply_render_settings()
     { "RENDER_BRICKWALL", 10 ^ (-1 / 20) },         -- -1 dBTP
     { "RENDER_FADEIN", 0.010 },
     { "RENDER_FADEOUT", 0.050 },
+    -- Rate, channel count and sink were NOT being set, so a project last used
+    -- for a mono MP3 bounce rendered the songs as mono MP3 while every other
+    -- setting here said "streaming master". 0 = follow the project rate.
+    { "RENDER_SRATE", 0 },
+    { "RENDER_CHANNELS", 2 },
   }
   local changed = {}
   for _, kv in ipairs(nums) do
@@ -122,7 +156,48 @@ local function apply_render_settings()
     changed[#changed + 1] = ("RENDER_PATTERN: %q -> \"$region\""):format(oldpat)
     reaper.GetSetProjectInfo_String(0, "RENDER_PATTERN", "$region", true)
   end
+  -- Same sink config the sampler script uses: "evaw" (WAV) + 0x18 = 24-bit.
+  -- The README promises 24-bit WAV, so pin it rather than inheriting whatever
+  -- the render dialog was last left on -- which is how a mono MP3 bounce could
+  -- silently become the format for a whole release.
+  local WAV24 = "ZXZhdxgAAQ=="
+  local _, oldfmt = reaper.GetSetProjectInfo_String(0, "RENDER_FORMAT", "", false)
+  if oldfmt ~= WAV24 then
+    changed[#changed + 1] = "RENDER_FORMAT: -> WAV 24-bit"
+    reaper.GetSetProjectInfo_String(0, "RENDER_FORMAT", WAV24, true)
+  end
   return changed
+end
+
+-- What nearby thresholds would find, so the choice is made before committing
+-- instead of by running and undoing. The sweep costs ~60 ms on a 90-minute take.
+-- Column alignment is not relied on: this lands in a system alert with a
+-- proportional font, so each row reads as a sentence rather than a table.
+local DELTAS = { -10, -5, 0, 5, 10 }
+
+local function mmss(sec)
+  return ("%d:%02d"):format(math.floor(sec / 60), math.floor(sec % 60 + 0.5))
+end
+
+local function preview_text(env, opts)
+  local lines = { "Threshold      Songs    Shortest - longest", "" }
+  for _, r in ipairs(E.sweep_thresholds(env, PEAKRATE, opts, DELTAS)) do
+    local mark = r.current and "   << your setting" or ""
+    if r.count == 0 then
+      lines[#lines + 1] = ("%+.0f dB       no songs found%s"):format(r.thresh, mark)
+    else
+      lines[#lines + 1] = ("%+.0f dB       %2d       %s - %s%s")
+        :format(r.thresh, r.count, mmss(r.shortest), mmss(r.longest), mark)
+    end
+  end
+  lines[#lines + 1] = ""
+  lines[#lines + 1] = ("Min song length is %g s -- anything shorter was already discarded.")
+    :format(opts.minSpan)
+  lines[#lines + 1] = "Raise it to reject noodling; raise min gap if one song splits in half."
+  lines[#lines + 1] = ""
+  lines[#lines + 1] = "Create regions with your current settings?"
+  lines[#lines + 1] = "Yes = go ahead    No = change settings    Cancel = do nothing"
+  return table.concat(lines, "\n")
 end
 
 local function main()
@@ -138,37 +213,11 @@ local function main()
     return
   end
 
-  local ok, csv = reaper.GetUserInputs("Split rehearsal into song regions", 5,
-    "Threshold (dB below item peak),Min gap between songs (s),Min song length (s),Region padding (s),Set streaming render settings (y/n),extrawidth=60",
-    table.concat({
-      get_setting("thresh", "-40"),
-      get_setting("minGap", "8"),
-      get_setting("minSong", "90"),
-      get_setting("pad", "1.0"),
-      get_setting("render", "y"),
-    }, ","))
-  if not ok then return end
-
-  local f = {}
-  for v in csv:gmatch("[^,]*") do f[#f + 1] = v end
-  local opts = {
-    thresh = tonumber(f[1]), minGap = tonumber(f[2]),
-    minSpan = tonumber(f[3]), pad = tonumber(f[4]),
-  }
-  local do_render = (f[5] or ""):lower():sub(1, 1) == "y"
-  if not (opts.thresh and opts.minGap and opts.minSpan and opts.pad) then
-    reaper.MB("All four numeric fields are required.", "Split rehearsal", 0)
-    return
-  end
-  reaper.SetExtState(EXT, "thresh", tostring(opts.thresh), true)
-  reaper.SetExtState(EXT, "minGap", tostring(opts.minGap), true)
-  reaper.SetExtState(EXT, "minSong", tostring(opts.minSpan), true)
-  reaper.SetExtState(EXT, "pad", tostring(opts.pad), true)
-  reaper.SetExtState(EXT, "render", do_render and "y" or "n", true)
-
   local item_pos = reaper.GetMediaItemInfo_Value(item, "D_POSITION")
   local item_len = reaper.GetMediaItemInfo_Value(item, "D_LENGTH")
 
+  -- Read the peaks ONCE, before the dialog: the settings loop below re-runs
+  -- detection on every pass and re-reading would make it crawl.
   local env = E.read_envelope(take, item_pos, item_len, PEAKRATE)
   if #env == 0 then
     reaper.MB("Could not read peaks for this item. Let REAPER finish building them and retry.",
@@ -176,10 +225,72 @@ local function main()
     return
   end
 
+  -- Settings, then a preview of what they would produce, until the user accepts.
+  -- Prefilled from what was last TYPED rather than from the stored settings, so
+  -- "change settings" comes back with the numbers you were just looking at.
+  local vals = {
+    get_setting("thresh", "-40"),
+    get_setting("minGap", "8"),
+    get_setting("minSong", "90"),
+    get_setting("pad", "1.0"),
+    get_setting("render", "y"),
+  }
+  local opts, do_render
+  while true do
+    local ok, csv = reaper.GetUserInputs("Split rehearsal into song regions", 5,
+      "Threshold (dB below item peak),Min gap between songs (s),Min song length (s),Region padding (s),Set streaming render settings (y/n),extrawidth=60",
+      table.concat(vals, ","))
+    if not ok then return end
+
+    local f = {}
+    for v in csv:gmatch("[^,]*") do f[#f + 1] = v end
+    for i = 1, 5 do vals[i] = f[i] or vals[i] end
+
+    opts = {
+      thresh = tonumber(f[1]), minGap = tonumber(f[2]),
+      minSpan = tonumber(f[3]), pad = tonumber(f[4]),
+    }
+    do_render = (f[5] or ""):lower():sub(1, 1) == "y"
+
+    -- Validation sends you back to the dialog rather than out of the script:
+    -- losing four correct fields because the fifth had a typo is its own bug.
+    local bad
+    if not (opts.thresh and opts.minGap and opts.minSpan and opts.pad) then
+      bad = "All four numeric fields are required."
+    elseif opts.minGap < 0 or opts.minSpan < 0 or opts.pad < 0 then
+      -- A negative pad walks the two ends of a span past each other, and
+      -- AddProjectMarker2 then gets a region whose end precedes its start.
+      bad = "Min gap, min song length and padding cannot be negative."
+    elseif opts.thresh > 0 then
+      bad = "Threshold is dB BELOW the item peak, so it must be zero or negative."
+    end
+    if bad then
+      if reaper.MB(bad .. "\n\nGo back and change it?", "Split rehearsal", 1) ~= 1 then return end
+    else
+      local answer = reaper.MB(preview_text(env, opts), "Split rehearsal -- what these settings find", 3)
+      if answer == 6 then break end   -- yes: use these
+      if answer == 2 then return end  -- cancel: nothing written
+      -- no: round again with the same values prefilled
+    end
+  end
+
+  reaper.SetExtState(EXT, "thresh", tostring(opts.thresh), true)
+  reaper.SetExtState(EXT, "minGap", tostring(opts.minGap), true)
+  reaper.SetExtState(EXT, "minSong", tostring(opts.minSpan), true)
+  reaper.SetExtState(EXT, "pad", tostring(opts.pad), true)
+  reaper.SetExtState(EXT, "render", do_render and "y" or "n", true)
+
   local songs = E.find_spans(env, PEAKRATE, opts)
   -- find_spans measures from the start of the envelope, which began at
   -- item_pos. Convert to project time once, here.
-  for _, s in ipairs(songs) do s.s = item_pos + s.s; s.e = item_pos + s.e end
+  -- The clamp matters because the peak reader rounds its bucket count up, so
+  -- the envelope can run a fraction of a bucket past the item; without it a
+  -- region ends slightly beyond the audio it describes.
+  local item_end = item_pos + item_len
+  for _, s in ipairs(songs) do
+    s.s = math.max(item_pos, math.min(item_end, item_pos + s.s))
+    s.e = math.max(item_pos, math.min(item_end, item_pos + s.e))
+  end
   if #songs == 0 then
     reaper.MB("No songs found. Try a lower threshold or a shorter minimum song length.",
       "Split rehearsal", 0)

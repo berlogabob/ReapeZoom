@@ -38,7 +38,9 @@ function M.find_spans(env, rate, opts)
   local limit = peak * 10 ^ (opts.thresh / 20)
 
   -- collect gaps: runs below the limit lasting at least minGap
-  local minGapBuckets = math.max(1, math.floor(opts.minGap * rate))
+  -- ceil, not floor: an accepted gap must never be SHORTER than the one asked
+  -- for, or the split happens where the user said it should not.
+  local minGapBuckets = math.max(1, math.ceil(opts.minGap * rate))
   local gaps, run = {}, nil
   for i = 1, n do
     if smooth[i] < limit then
@@ -64,10 +66,13 @@ function M.find_spans(env, rate, opts)
     if (b - a + 1) / rate >= opts.minSpan then
       -- Pad into the surrounding quiet, but at most halfway to the neighbouring
       -- span, so results can never overlap however large the padding.
-      local prev_end = k > 1 and spans[k - 1][2] or 0
-      local next_start = spans[k + 1] and spans[k + 1][1] or (n + 1)
-      local s = a - math.min(opts.pad * rate, (a - prev_end - 1) / 2)
-      local e = b + math.min(opts.pad * rate, (next_start - b - 1) / 2)
+      -- The first and last span have no neighbour on the outer side, so there
+      -- they take the whole remaining distance -- halving against a boundary
+      -- that is not a span silently threw away half the requested padding.
+      local head = (k > 1) and (a - spans[k - 1][2] - 1) / 2 or (a - 1)
+      local tail = spans[k + 1] and (spans[k + 1][1] - b - 1) / 2 or (n - b)
+      local s = a - math.min(opts.pad * rate, head)
+      local e = b + math.min(opts.pad * rate, tail)
       out[#out + 1] = { s = (s - 1) / rate, e = e / rate }
     end
   end
@@ -88,7 +93,9 @@ function M.find_onsets(env, rate, opts)
   for i = 1, n do if env[i] > peak then peak = env[i] end end
   if peak <= 0 then return {} end
   local limit = peak * 10 ^ (opts.thresh / 20)
-  local minGapBuckets = math.max(1, math.floor(opts.minInterval * rate))
+  -- ceil for the same reason as find_spans: two onsets must never end up closer
+  -- together than minInterval.
+  local minGapBuckets = math.max(1, math.ceil(opts.minInterval * rate))
 
   local onsets, armed, last = {}, true, nil
   for i = 1, n do
@@ -132,6 +139,62 @@ function M.assign_layers(values, n)
   end
 
   return layer_of, layers
+end
+
+-- What the detector would find at nearby thresholds, so the choice can be made
+-- before committing rather than by running and undoing.
+-- `deltas` are dB offsets applied to opts.thresh. Thresholds above 0 are
+-- skipped: the number is dB BELOW the item peak, so a positive one is
+-- meaningless. Rows come back sorted by threshold, and exactly one is marked
+-- `current` -- the one the caller actually asked for.
+-- Cheap enough to do inline: ~15 ms per find_spans on a 68-minute envelope.
+function M.sweep_thresholds(env, rate, opts, deltas)
+  local rows = {}
+  for _, d in ipairs(deltas) do
+    local t = opts.thresh + d
+    if t <= 0 then
+      local spans = M.find_spans(env, rate, {
+        thresh = t, minGap = opts.minGap, minSpan = opts.minSpan, pad = opts.pad,
+      })
+      local shortest, longest
+      for _, s in ipairs(spans) do
+        local len = s.e - s.s
+        if not shortest or len < shortest then shortest = len end
+        if not longest or len > longest then longest = len end
+      end
+      rows[#rows + 1] = {
+        thresh = t, count = #spans, shortest = shortest, longest = longest,
+        current = d == 0,
+      }
+    end
+  end
+  table.sort(rows, function(a, b) return a.thresh < b.thresh end)
+  return rows
+end
+
+-- Loudest bucket in an envelope, linear. 0 for an empty one.
+function M.max_peak(env)
+  local m = 0
+  for i = 1, #env do if env[i] > m then m = env[i] end end
+  return m
+end
+
+-- The parts of an item covered by regions, in timeline order, clipped to the
+-- item. No overlapping region means the whole item is one span.
+-- `regions` is a plain array of {s=,e=} in PROJECT time -- the caller does the
+-- EnumProjectMarkers3 walk, so this stays pure and testable.
+-- Returns {s=,e=} in PROJECT time.
+function M.spans_in(regions, item_pos, item_len)
+  local item_end = item_pos + item_len
+  local out = {}
+  for _, r in ipairs(regions) do
+    if r.e > item_pos and r.s < item_end then
+      out[#out + 1] = { s = math.max(r.s, item_pos), e = math.min(r.e, item_end) }
+    end
+  end
+  table.sort(out, function(a, b) return a.s < b.s end)
+  if #out == 0 then out[1] = { s = item_pos, e = item_end } end
+  return out
 end
 
 -- Map layer index (1..n) to a MIDI velocity range. Layer 1 is the quietest.
@@ -259,6 +322,26 @@ function M.selftest()
   assert(math.abs(ls[1].s - 5) <= 0.6,
     ("span starts at %.2f s into env, expected ~5 -- offsets are env-relative"):format(ls[1].s))
 
+  -- padding at the outer edges takes the whole remaining distance; halving
+  -- against a non-existent neighbour silently dropped half of it
+  local island = {}
+  for _ = 1, 2 * rate do island[#island + 1] = 0.0001 end
+  for _ = 1, 60 * rate do island[#island + 1] = 0.8 end
+  for _ = 1, 4 * rate do island[#island + 1] = 0.0001 end
+  local is = M.find_spans(island, rate, { thresh = -40, minGap = 1, minSpan = 45, pad = 30 })
+  assert(#is == 1, ("expected 1 span, got %d"):format(#is))
+  assert(is[1].s < 0.01, ("head padding stopped at %.2f s, should reach 0"):format(is[1].s))
+  assert(is[1].e > #island / rate - 0.01,
+    ("tail padding stopped at %.2f s, should reach %.2f"):format(is[1].e, #island / rate))
+
+  -- a take that ends in silence must not have that silence inside the last span
+  local trail = {}
+  for _ = 1, 60 * rate do trail[#trail + 1] = 0.8 end
+  for _ = 1, 12 * rate do trail[#trail + 1] = 0.001 end
+  local ts = M.find_spans(trail, rate, { thresh = -40, minGap = 8, minSpan = 45, pad = 0 })
+  assert(#ts == 1, ("expected 1 span, got %d"):format(#ts))
+  assert(ts[1].e < 61, ("span runs to %.2f s, must end near 60 not 72"):format(ts[1].e))
+
   assert(#M.find_spans({}, rate, o) == 0)
   local silent = {}
   for _ = 1, 100 * rate do silent[#silent + 1] = 0 end
@@ -294,6 +377,96 @@ function M.selftest()
   for i = 1, 400 do swell[#swell + 1] = i / 400 end
   assert(#M.find_onsets(swell, orate, oo) == 1, "swell must not retrigger")
 
+  -- onsets are never closer together than minInterval: rounding the bucket
+  -- count down used to accept a gap shorter than the one asked for
+  local tight = M.find_onsets({ 0, 1, 0, 1 }, 10, { thresh = -20, minInterval = 0.29 })
+  for i = 2, #tight do
+    assert(tight[i] - tight[i - 1] >= 0.29 - 1e-9,
+      ("onsets %.2f s apart, minInterval was 0.29"):format(tight[i] - tight[i - 1]))
+  end
+
+  -- nothing to detect must produce nothing, not a phantom hit at position 0
+  assert(#M.find_onsets({}, orate, oo) == 0, "empty env must give no onsets")
+  local zeros = {}
+  for _ = 1, 100 do zeros[#zeros + 1] = 0 end
+  assert(#M.find_onsets(zeros, orate, oo) == 0, "silence must give no onsets")
+
+  -- sweep_thresholds ---------------------------------------------------
+  local DELTAS = { -10, -5, 0, 5, 10 }
+  local sw = M.sweep_thresholds(env, rate, o, DELTAS)
+  assert(#sw > 0, "sweep produced no rows")
+
+  -- THE invariant: the previewed count for the chosen threshold must equal
+  -- what the commit will actually produce. If these can disagree the preview
+  -- is worse than useless, because it is believed.
+  local cur
+  for _, r in ipairs(sw) do if r.current then cur = r end end
+  assert(cur, "no row marked current")
+  assert(cur.thresh == o.thresh, ("current row is %g dB, asked for %g"):format(cur.thresh, o.thresh))
+  assert(cur.count == #M.find_spans(env, rate, o),
+    ("preview says %d songs, find_spans says %d"):format(cur.count, #M.find_spans(env, rate, o)))
+
+  -- the current row's lengths must be the real min and max, not merely
+  -- consistent with each other: assert against spans computed directly
+  local direct = M.find_spans(env, rate, o)
+  local dmin, dmax
+  for _, s in ipairs(direct) do
+    local len = s.e - s.s
+    if not dmin or len < dmin then dmin = len end
+    if not dmax or len > dmax then dmax = len end
+  end
+  assert(math.abs(cur.shortest - dmin) < 1e-9,
+    ("shortest is %.2f, the actual shortest span is %.2f"):format(cur.shortest, dmin))
+  assert(math.abs(cur.longest - dmax) < 1e-9,
+    ("longest is %.2f, the actual longest span is %.2f"):format(cur.longest, dmax))
+  assert(dmin < dmax, "fixture must have spans of differing length or this proves nothing")
+
+  -- sorting is the sweep's job, not the caller's: feed the deltas scrambled
+  local scrambled = M.sweep_thresholds(env, rate, o, { 5, -10, 0, 10, -5 })
+  for i = 2, #scrambled do
+    assert(scrambled[i].thresh > scrambled[i - 1].thresh, "sweep rows must be sorted by threshold")
+  end
+  for i = 2, #sw do
+    assert(sw[i].thresh > sw[i - 1].thresh, "sweep rows must be sorted by threshold")
+  end
+  for _, r in ipairs(sw) do
+    assert(r.thresh <= 0, ("threshold %g is above 0 -- it is dB BELOW the peak"):format(r.thresh))
+    if r.count > 0 then
+      assert(r.shortest and r.longest, "a non-empty row must report both lengths")
+      assert(r.shortest <= r.longest, "shortest must not exceed longest")
+    else
+      assert(not r.shortest and not r.longest, "an empty row must report no lengths")
+    end
+  end
+
+  -- a threshold that would land above 0 is dropped, not clamped or passed on
+  local near = M.sweep_thresholds(env, rate,
+    { thresh = -2, minGap = o.minGap, minSpan = o.minSpan, pad = o.pad }, DELTAS)
+  for _, r in ipairs(near) do assert(r.thresh <= 0, "positive threshold leaked into the sweep") end
+  assert(#near < #DELTAS, "rows above 0 dB should have been dropped")
+
+  -- silence must give zero-count rows, not an error
+  local ssw = M.sweep_thresholds(silent, rate, o, DELTAS)
+  for _, r in ipairs(ssw) do assert(r.count == 0, "silence produced spans") end
+
+  -- max_peak ----------------------------------------------------------
+  assert(M.max_peak({}) == 0, "empty envelope has no peak")
+  assert(M.max_peak({ 0.2, 0.9, 0.4 }) == 0.9, "peak must be the maximum")
+  assert(M.max_peak({ 0.9, 0.2 }) == 0.9, "peak must not depend on order")
+
+  -- spans_in ----------------------------------------------------------
+  -- item 10..20, regions given out of order, clipped at both edges
+  local sp = M.spans_in({ { s = 18, e = 25 }, { s = 5, e = 12 }, { s = 30, e = 40 } }, 10, 10)
+  assert(#sp == 2, ("expected 2 spans inside the item, got %d"):format(#sp))
+  assert(sp[1].s == 10 and sp[1].e == 12, ("left clip wrong: %.1f..%.1f"):format(sp[1].s, sp[1].e))
+  assert(sp[2].s == 18 and sp[2].e == 20, ("right clip wrong: %.1f..%.1f"):format(sp[2].s, sp[2].e))
+  -- a region that only touches the edge does not count as overlapping
+  assert(#M.spans_in({ { s = 0, e = 10 } }, 10, 10) == 1, "touching region must fall back")
+  assert(M.spans_in({ { s = 0, e = 10 } }, 10, 10)[1].e == 20, "fallback must span the item")
+  -- no regions at all: the whole item is one span
+  local none = M.spans_in({}, 10, 10)
+  assert(#none == 1 and none[1].s == 10 and none[1].e == 20, "no-region fallback wrong")
+
   -- layers ------------------------------------------------------------
   local vals = {}
   for i = 1, 20 do vals[i] = 10 ^ ((-30 + (i - 1) * 30 / 19) / 20) end
@@ -306,6 +479,19 @@ function M.selftest()
   -- never produce an empty layer when there are fewer hits than layers
   local _, few = M.assign_layers({ 0.1, 0.5 }, 4)
   assert(#few == 2, ("expected 2 layers for 2 hits, got %d"):format(#few))
+
+  -- both halves of the guard: nothing to sort, and a nonsense layer count
+  local lo0, la0 = M.assign_layers({}, 4)
+  assert(#lo0 == 0 and #la0 == 0, "empty values must give empty results")
+  local lo1, la1 = M.assign_layers({ 0.5 }, 0)
+  assert(#lo1 == 0 and #la1 == 0, "n < 1 must give empty results")
+
+  -- the remainder goes to the LOWEST layers: 5 values over 2 layers is 3 then 2
+  local lo5, la5 = M.assign_layers({ 0.1, 0.2, 0.3, 0.4, 0.5 }, 2)
+  assert(#la5 == 2, ("expected 2 layers, got %d"):format(#la5))
+  assert(la5[1].count == 3 and la5[2].count == 2,
+    ("remainder split is %d/%d, documented as 3/2"):format(la5[1].count, la5[2].count))
+  assert(lo5[3] == 1, "the third-quietest of five must sit in layer 1")
 
   -- velocity ranges tile 1..127 with no gaps and no overlap
   local prev = 0

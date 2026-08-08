@@ -115,6 +115,11 @@ function M.selftest()
   assert(math.abs(M.correlation(a, noise)) < 0.5, "unrelated must correlate low")
   assert(M.correlation({}, {}) == 0, "empty is safe")
   assert(M.correlation({ 1, 1, 1 }, { 2, 2, 2 }) == 0, "zero variance is safe")
+  -- each guard separately: the both-constant case above exits on the left one,
+  -- so the right-hand guard was never reached. Without it this is 0/0 = NaN,
+  -- and NaN reads as "good mono compatibility" downstream.
+  assert(M.correlation({ -1, 1, -1, 1 }, { 0, 0, 0, 0 }) == 0, "flat right channel is safe")
+  assert(M.correlation({ 0, 0, 0, 0 }, { -1, 1, -1, 1 }) == 0, "flat left channel is safe")
 
   -- peaks ------------------------------------------------------------
   local chans = { {}, {} }
@@ -148,6 +153,40 @@ function M.selftest()
   local _, none = M.report(M.analyze_peaks(even), 0.95, 10)
   assert(not none.polarity and not none.balance and not none.dc,
     "a clean file must raise no flags")
+
+  -- uncorrelated is its own verdict, between "inverted" and "fine". Untested,
+  -- this branch could vanish and a genuinely wide recording would be called
+  -- healthy.
+  local wtxt, wide = M.report(M.analyze_peaks(even), 0, 10)
+  assert(wide.wide, "correlation 0 must raise the wide flag")
+  assert(not wide.polarity, "correlation 0 is not a polarity fault")
+  assert(wtxt:find("mono", 1, true), "the wide warning must mention mono")
+
+  -- and the boundary between the two verdicts behaves
+  local _, stillwide = M.report(M.analyze_peaks(even), 0.19, 10)
+  assert(stillwide.wide, "0.19 must still count as wide")
+  local _, ok21 = M.report(M.analyze_peaks(even), 0.21, 10)
+  assert(not ok21.wide, "0.21 must not be flagged wide")
+
+  -- correlation is optional: an unreadable or silent take reports nil, and the
+  -- report must say so rather than crash or quietly omit the line
+  local ntxt, nflags = M.report(M.analyze_peaks(even), nil, 0)
+  assert(ntxt:find("not measured", 1, true), "nil correlation must say 'not measured'")
+  assert(not nflags.polarity and not nflags.wide, "nil correlation raises no correlation flag")
+
+  -- digital silence must read as zero everywhere, not as an imbalance
+  local sil = { {}, {} }
+  for i = 1, 100 do sil[1][i] = { mx = 0, mn = 0 }; sil[2][i] = { mx = 0, mn = 0 } end
+  local sp = M.analyze_peaks(sil)
+  assert(sp.level[1] == 0 and sp.level[2] == 0, "silence has no level")
+  assert(sp.dc[1] == 0 and sp.dc[2] == 0, "silence has no DC")
+  assert(sp.balance_db == 0, ("silence reported balance %.2f"):format(sp.balance_db))
+  local _, sflags = M.report(sp, nil, 0)
+  assert(not sflags.balance and not sflags.dc, "silence must raise no flags")
+
+  -- no channels at all is not a stereo file
+  local none_ch = M.analyze_peaks({})
+  assert(none_ch.balance_db == 0 and #none_ch.level == 0, "zero channels must be inert")
 
   return true
 end

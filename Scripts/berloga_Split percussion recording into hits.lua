@@ -23,7 +23,17 @@ local function require_lib(name)
     return nil
   end
   fh:close()
-  return dofile(path)
+  -- A mismatched or half-written library can load and return something that is
+  -- not a module. Truthiness alone lets that through, and the failure then
+  -- surfaces much later as "attempt to index a boolean" -- inside an undo
+  -- block, in the worst case, leaving it unclosed.
+  local ok, mod = pcall(dofile, path)
+  if not ok or type(mod) ~= "table" then
+    reaper.MB(("Library failed to load:\n%s\n\n%s\n\nReinstall ReapeZoom via ReaPack.")
+      :format(path, ok and "It did not return a module." or tostring(mod)), "ReapeZoom", 0)
+    return nil
+  end
+  return mod
 end
 
 local E = require_lib("envelope.lua")
@@ -73,6 +83,19 @@ local function main()
     reaper.MB("All six fields must be numbers.", "Split percussion", 0)
     return
   end
+  -- A negative tail makes every hit's stop land before its start, so the
+  -- "stop > start" test below silently rejects all of them and the action
+  -- reports finding onsets while creating nothing.
+  if minInt < 0 or preroll < 0 or tail < 0 or passGap < 0 or passMin < 0 then
+    reaper.MB("Times and gaps are durations, so none of them can be negative.",
+      "Split percussion", 0)
+    return
+  end
+  if thresh > 0 then
+    reaper.MB("Hit threshold is dB BELOW the pass peak, so it must be zero or negative.",
+      "Split percussion", 0)
+    return
+  end
   for k, v in pairs { hitThresh = thresh, minInt = minInt, preroll = preroll,
                       tail = tail, passGap = passGap, passMin = passMin } do
     reaper.SetExtState(EXT, k, tostring(v), true)
@@ -84,6 +107,14 @@ local function main()
   local item_pos = reaper.GetMediaItemInfo_Value(item, "D_POSITION")
   local item_len = reaper.GetMediaItemInfo_Value(item, "D_LENGTH")
   local src_offs = reaper.GetMediaItemTakeInfo_Value(take, "D_STARTOFFS")
+  -- Project seconds and source seconds are only the same thing at 1x. At 2x,
+  -- one second of item covers two seconds of source, so every hit offset has to
+  -- be scaled and the new takes have to inherit the rate, or they point at the
+  -- wrong audio and play it at the wrong speed.
+  local playrate = reaper.GetMediaItemTakeInfo_Value(take, "D_PLAYRATE")
+  if playrate <= 0 then playrate = 1 end
+  local preserve_pitch = reaper.GetMediaItemTakeInfo_Value(take, "B_PPITCH")
+  local pitch = reaper.GetMediaItemTakeInfo_Value(take, "D_PITCH")
   local src_track = reaper.GetMediaItem_Track(item)
   local track_idx = reaper.GetMediaTrackInfo_Value(src_track, "IP_TRACKNUMBER") -- 1-based
 
@@ -109,7 +140,7 @@ local function main()
   reaper.Undo_BeginBlock()
   reaper.PreventUIRefresh(1)
 
-  local total, empty = 0, {}
+  local total, empty, created = 0, {}, 0
   for p, pass in ipairs(passes) do
     -- onset detection inside this pass, at transient resolution
     local fine = E.read_envelope(take, pass.s, pass.e - pass.s, HITRATE)
@@ -118,8 +149,12 @@ local function main()
     if #onsets == 0 then
       empty[#empty + 1] = p
     else
-      reaper.InsertTrackAtIndex(track_idx + p - 1, true)
-      local tr = reaper.GetTrack(0, track_idx + p - 1)
+      -- Count tracks actually created, not passes examined: a pass with no
+      -- onsets would otherwise leave a hole in the numbering and the following
+      -- generated tracks would land after whatever tracks already sat there.
+      reaper.InsertTrackAtIndex(track_idx + created, true)
+      local tr = reaper.GetTrack(0, track_idx + created)
+      created = created + 1
       reaper.GetSetMediaTrackInfo_String(tr, "P_NAME", ("Sound %d"):format(p), true)
 
       for h, onset in ipairs(onsets) do
@@ -141,9 +176,13 @@ local function main()
           reaper.SetMediaItemInfo_Value(it, "D_FADEOUTLEN", 0.020)
           local tk = reaper.AddTakeToMediaItem(it)
           reaper.SetMediaItemTake_Source(tk, reaper.PCM_Source_CreateFromFile(path))
-          -- D_STARTOFFS is source time: the source offset of the item plus how
-          -- far into the item this hit starts.
-          reaper.SetMediaItemTakeInfo_Value(tk, "D_STARTOFFS", src_offs + (start - item_pos))
+          -- D_STARTOFFS is SOURCE time: the source offset of the item plus how
+          -- far into the item this hit starts, converted at the playback rate.
+          reaper.SetMediaItemTakeInfo_Value(tk, "D_STARTOFFS",
+            src_offs + (start - item_pos) * playrate)
+          reaper.SetMediaItemTakeInfo_Value(tk, "D_PLAYRATE", playrate)
+          reaper.SetMediaItemTakeInfo_Value(tk, "B_PPITCH", preserve_pitch)
+          reaper.SetMediaItemTakeInfo_Value(tk, "D_PITCH", pitch)
           reaper.GetSetMediaItemTakeInfo_String(tk, "P_NAME",
             ("%d.%d  %.1f dB"):format(p, h, db(pk)), true)
           total = total + 1
