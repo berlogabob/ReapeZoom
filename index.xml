@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<index version="1" name="ReapeZoom" commit="8eed4ca41f027cd8c2806205e1a9e52cd05a6a30">
+<index version="1" name="ReapeZoom" commit="a62cd6a834f0c74fa31d8d10f84b39a73345206c">
   <category name="Scripts">
     <reapack name="berloga_Split rehearsal recording into song regions.lua" type="script" desc="ReapeZoom">
       <metadata>
@@ -212,6 +212,61 @@ minimum gaps round up so a gap is never shorter than the one requested.]]></chan
         <source file="lib/preset.lua">https://github.com/berlogabob/ReapeZoom/raw/8eed4ca41f027cd8c2806205e1a9e52cd05a6a30/Scripts/lib/preset.lua</source>
         <source file="lib/stereo.lua">https://github.com/berlogabob/ReapeZoom/raw/8eed4ca41f027cd8c2806205e1a9e52cd05a6a30/Scripts/lib/stereo.lua</source>
         <source file="lib/tempo.lua">https://github.com/berlogabob/ReapeZoom/raw/8eed4ca41f027cd8c2806205e1a9e52cd05a6a30/Scripts/lib/tempo.lua</source>
+      </version>
+      <version name="2.9" author="berlogabob" time="2026-10-10T13:57:25Z">
+        <changelog><![CDATA[Split rehearsal: preview lists every song with start, end and length; a format field
+(mp3/wav) in the dialog; a "name the songs" step so files get real titles; waits for
+peaks instead of asking you to retry; runs over every selected item.
+New action Rehearsal to masters: stereo check, split, level ride, master and render in one go.
+New action Master songs: loudness presets (mp3 / streaming / apple / archive), item
+trim to the level the chain expects, a stock ReaComp + ReaLimit master chain, and a
+check mode that measures every rendered file (LUFS-I, true peak) against the preset.
+MP3 presets limit 1 dB lower so the encode cannot push true peak over the target.
+Split rehearsal: batch mode for unattended runs, threshold "auto" picked from the
+sweep, regions named after the recording file, render folder set, MP3 320 render
+format (ExtState format=wav for 24-bit WAV), and still-building peaks reported
+instead of "no songs found".
+Split rehearsal: optionally finds each song's tempo and adds a second, tempo-aligned
+take to it, so T flips between the warped version and the original.
+Split rehearsal: a re-run only replaces the regions inside the item it was run
+on, so a project holding several recordings keeps the songs found in the others.
+Split rehearsal: durations no longer round to "3:60".
+Split rehearsal: shows what nearby thresholds would find -- song count and
+shortest/longest -- before creating anything, and lets you go back and
+change the settings without committing first.
+Ride levels: measures the selection first and reports peak, loud, quiet and
+the dynamic range between them, then takes a target range to ride toward --
+0 flattens as before, the measured range leaves the material alone.
+Ride levels: accepts several selected items instead of one.
+Ride levels: only reuses automation items it created itself, refuses to run
+over hand-drawn envelope points, and restores your track selection.
+Ride levels: the gain curve now ramps from neutral at both item edges
+instead of stepping straight to its full correction.
+Stereo check: the polarity fix goes on the take, not the track, so other
+items on the same track are no longer inverted too.
+Split rehearsal: sets render sample rate, channel count and WAV format,
+which were previously left at whatever the project last used.
+Split percussion: hits from a time-stretched take now map to the right
+source position and inherit the playback rate.
+Build preset: sample filenames are unique, so two similarly named tracks no
+longer overwrite each other; layout markers only delete their own.
+All scripts: reject negative durations and amounts up front, and report a
+broken library install instead of failing later mid-edit.
+Padding at the first and last song now uses the full available space, and
+minimum gaps round up so a gap is never shorter than the one requested.]]></changelog>
+        <source main="main">https://github.com/berlogabob/ReapeZoom/raw/a62cd6a834f0c74fa31d8d10f84b39a73345206c/Scripts/berloga_Split%20rehearsal%20recording%20into%20song%20regions.lua</source>
+        <source main="main" file="berloga_Ride levels into automation items.lua">https://github.com/berlogabob/ReapeZoom/raw/a62cd6a834f0c74fa31d8d10f84b39a73345206c/Scripts/berloga_Ride%20levels%20into%20automation%20items.lua</source>
+        <source main="main" file="berloga_Check stereo and phase.lua">https://github.com/berlogabob/ReapeZoom/raw/a62cd6a834f0c74fa31d8d10f84b39a73345206c/Scripts/berloga_Check%20stereo%20and%20phase.lua</source>
+        <source main="main" file="berloga_Split percussion recording into hits.lua">https://github.com/berlogabob/ReapeZoom/raw/a62cd6a834f0c74fa31d8d10f84b39a73345206c/Scripts/berloga_Split%20percussion%20recording%20into%20hits.lua</source>
+        <source main="main" file="berloga_Build sampler preset from tracks.lua">https://github.com/berlogabob/ReapeZoom/raw/a62cd6a834f0c74fa31d8d10f84b39a73345206c/Scripts/berloga_Build%20sampler%20preset%20from%20tracks.lua</source>
+        <source main="main" file="berloga_Master songs.lua">https://github.com/berlogabob/ReapeZoom/raw/a62cd6a834f0c74fa31d8d10f84b39a73345206c/Scripts/berloga_Master%20songs.lua</source>
+        <source main="main" file="berloga_Rehearsal to masters.lua">https://github.com/berlogabob/ReapeZoom/raw/a62cd6a834f0c74fa31d8d10f84b39a73345206c/Scripts/berloga_Rehearsal%20to%20masters.lua</source>
+        <source file="lib/envelope.lua">https://github.com/berlogabob/ReapeZoom/raw/a62cd6a834f0c74fa31d8d10f84b39a73345206c/Scripts/lib/envelope.lua</source>
+        <source file="lib/level.lua">https://github.com/berlogabob/ReapeZoom/raw/a62cd6a834f0c74fa31d8d10f84b39a73345206c/Scripts/lib/level.lua</source>
+        <source file="lib/master.lua">https://github.com/berlogabob/ReapeZoom/raw/a62cd6a834f0c74fa31d8d10f84b39a73345206c/Scripts/lib/master.lua</source>
+        <source file="lib/preset.lua">https://github.com/berlogabob/ReapeZoom/raw/a62cd6a834f0c74fa31d8d10f84b39a73345206c/Scripts/lib/preset.lua</source>
+        <source file="lib/stereo.lua">https://github.com/berlogabob/ReapeZoom/raw/a62cd6a834f0c74fa31d8d10f84b39a73345206c/Scripts/lib/stereo.lua</source>
+        <source file="lib/tempo.lua">https://github.com/berlogabob/ReapeZoom/raw/a62cd6a834f0c74fa31d8d10f84b39a73345206c/Scripts/lib/tempo.lua</source>
       </version>
     </reapack>
   </category>
