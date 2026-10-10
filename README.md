@@ -21,12 +21,13 @@ Then Browse packages → install **ReapeZoom**. It registers five actions.
 
 ## What's in here
 
-Five actions over four shared libraries. Everything else is a native REAPER feature that just
+Five actions over five shared libraries. Everything else is a native REAPER feature that just
 needs the right settings — the scripts apply them for you.
 
 | Job | How |
 |---|---|
 | Find the songs in a 90-minute rehearsal | `Split rehearsal recording into song regions` |
+| Warp a song onto a steady grid at its own tempo | same action, `Tempo-align songs` on |
 | Even out level *inside* a song | `Ride levels into automation items` |
 | Polarity, balance, DC, mono compatibility | `Check stereo and phase` |
 | Split a sampling session into individual hits | `Split percussion recording into hits` |
@@ -55,11 +56,12 @@ meter goes red while you monitor.
 **3. Select the item and run the script.**
 
 ```
-Threshold (dB below item peak)   -40    lower = more tolerant of quiet passages
+Threshold (dB below item peak)   auto   or a number; auto = first threshold whose song count holds 5 dB up
 Min gap between songs (s)         8     shorter than your between-song chatter
 Min song length (s)              90     longer than your longest bit of noodling
 Region padding (s)                1.0   breathing room at each end
 Set streaming render settings     y
+Tempo-align songs                 n     off by default; see step 4
 ```
 
 The threshold is **relative to the item's own peak**, not absolute dBFS, so it works the same
@@ -92,16 +94,60 @@ by running and undoing.
 The sweep re-runs detection five times on peaks that are already in memory — about 90 ms on a
 91-minute take, so it is not worth avoiding.
 
-It creates regions named `01`, `02`, … It does not split, glue, or otherwise touch the audio.
+It creates regions named after the recording file — `261006-194759 01`, `261006-194759 02`, …. With tempo-align off it does not split, glue, or
+otherwise touch the audio.
 
-**4. Rename.** `View → Region/Marker Manager`, type the real titles. Those names become the
+**Names carry the recording's file name**, so a night of several recordings never produces two
+regions called `01`. Re-running only replaces the regions inside the item it was run on.
+
+**4. Optional: tempo-align.** With `Tempo-align songs` set to `y`, it goes on to estimate each
+song's tempo and warp that song onto a steady grid at that tempo, so the drift a band picks up
+over four minutes is gone. Nothing is destroyed: the warp goes on a **second take** of the song,
+and `T` (next take) flips between aligned and original.
+
+It shows you what it found before writing anything:
+
+```
+01  3:34   92 BPM   clarity 3.1   drift 0.72 s
+02  8:19  140 BPM   clarity 4.3   drift 0.82 s
+03  5:07  140 BPM   clarity 3.4   drift 0.64 s
+07  1:42   86 BPM   clarity 2.4   drift 1.05 s   CHECK
+```
+
+**Yes** writes the aligned takes, **No** lets you type the tempos yourself, **Cancel** leaves the
+regions and stops. *Drift* is how far the played beat strays from a steady grid — what the warp
+is there to remove. *Clarity* is how far the winning tempo stands above every other tempo in
+range. On the material this was built for, deterministic noise scores 2.7, a real song 2.4 to
+4.4, and a click track 21 — so clarity tells a click track from music, and does **not** tell a
+right answer from a wrong one. Read it as "look at this one", not as a probability, and trust
+your ears over the number.
+
+The failure mode to expect is the octave: a 140 BPM song reported as 70, or a 90 as 180. Half or
+double is what a tempo estimator gets wrong, and it is why the tempos are editable rather than
+merely displayed. Type the right one and the warp is rebuilt from the beats already found.
+
+Two consequences worth knowing before you turn it on:
+
+- **It splits the item.** One item per song, plus whatever was between them, left alone. The
+  long rehearsal item does not survive that, so to redo the whole take — different threshold,
+  different settings — **undo first**. Run it again without undoing and it works on whatever is
+  selected, which is now a single song, and replaces all the regions with that one song's. On a
+  single song that is exactly right: it reuses that song's item and rewrites its aligned take
+  rather than splitting again or stacking a third take.
+- **The aligned take becomes the active one**, so `Cmd+Alt+R` now renders the aligned versions.
+  Flip the takes back first if you want the originals.
+
+One tempo is fitted per song. A song that speeds up deliberately in its last chorus is warped to
+its average and will fight you; leave those on the original take.
+
+**5. Rename.** `View → Region/Marker Manager`, type the real titles. Do this before rendering. Those names become the
 filenames.
 
-**5. Check the stereo** — `Check stereo and phase`. Reports correlation, L/R balance, DC offset
+**6. Check the stereo** — `Check stereo and phase`. Reports correlation, L/R balance, DC offset
 and mono compatibility, and offers to flip the polarity if the channels are inverted. See below
 for why this matters even on a single-mic recording.
 
-**6. Ride the levels** — `Ride levels into automation items`. One automation item per song region
+**7. Ride the levels** — `Ride levels into automation items`. One automation item per song region
 on the track volume envelope. Select several items and it measures them all, then rides each one.
 
 It **measures first**: before the dialog you get peak, loud, quiet and the dynamic range between
@@ -124,13 +170,13 @@ It only ever rewrites automation items it created itself. If the envelope holds 
 an item you made, or points you drew by hand inside a region — it stops and says so rather than
 overwriting your work.
 
-**7. Render.** `Cmd+Alt+R`. With the render option left on, this is already set:
+**8. Render.** `Cmd+Alt+R`. With the render option left on, this is already set:
 
 | Setting | Value |
 |---|---|
 | Bounds | All project regions |
 | File name | `$region` |
-| Format | WAV, 24-bit PCM, 48 kHz |
+| Format | MP3 320 kbps CBR, 48 kHz (ExtState `ReapeZoom/format` = `wav` for 24-bit WAV) |
 | Normalize | **−14 LUFS-I** |
 | Brickwall limit | **−1 dBTP** (true peak) |
 | Fades | 10 ms in, 50 ms out |
@@ -210,6 +256,31 @@ mono properly.
 
 # Percussion → sampler instrument
 
+## One-command library build
+
+With `ffmpeg`, `ffprobe`, Lua, and NumPy installed, a complete library is one command:
+
+```sh
+python3 Tools/build_library.py Media/*.WAV --out Cajon --kit Cajon
+```
+
+It detects one-shots and long loop spans, freezes or reuses the articulation model, chooses
+velocity layers per articulation, applies one kit-wide gain, and writes `Cajon.model`,
+`Cajon.sfz`, `Cajon.dspreset`, `Cajon.md`, and the verified 24-bit stereo files under
+`Cajon/Samples/`. The command fails if either preset names a missing sample, a sample is not
+referenced, or an output clips.
+
+Three parts are recording conventions, not facts discovered from the signal:
+
+- **Four articulations (`k=4`)** means cajon bass/tone/edge/slap. The measured silhouette scores
+  actually decline from k=2 through k=4, so choosing k automatically would produce the wrong
+  musical instrument.
+- **Velocity layers are chosen per articulation:** take the largest equal-count split up to 12
+  layers that stays within 9 dB while preserving a round-robin floor, trying 5, 4, 3, then 2.
+- **Left and right hand cannot be inferred** from the coincident X/Y capsule; the measured channel
+  spread is only 0.54 dB. Same-timbre passes are therefore neutral `_A`/`_B`, never claimed as
+  left or right.
+
 The organising idea is a **3-axis matrix**:
 
 | Axis | Comes from | Becomes |
@@ -288,6 +359,67 @@ default for a hand percussion instrument; record more hits and raise it.
 
 ---
 
+# Recordings → library, in one command
+
+The REAPER actions above want you to record one pass per sound type. When a session isn't
+organised that way — sounds alternating, hits 1.5 s apart, grooves mixed in with one-hits —
+this builds the whole library outside REAPER instead:
+
+```sh
+python3 Tools/build_library.py Media/*.WAV --out Cajon --kit Cajon
+```
+
+Needs `ffmpeg`, `ffprobe` and `numpy`. It detects hits and loops, clusters the hits by timbre,
+picks velocity layers, cuts every sample, writes `<Kit>.sfz`, `<Kit>.dspreset`, `<Kit>.model`
+and a `<Kit>.md` report, then verifies the result and **exits non-zero if the library is not
+shareable** — a missing sample, a velocity hole, or anything clipping.
+
+`Tools/build_library.py` owns the audio. Every *decision* is made by `Scripts/lib` through
+`Tools/build_library.lua`, so the clustering, layering and preset logic stays where the
+self-checks are.
+
+### Adding to a library later
+
+The cluster model is frozen into `<Kit>.model` on the first build and reused afterwards, so
+articulation names and MIDI notes **do not move** when you add a recording. Point the same
+command at the old and new files together. A corrupt model rebuilds from scratch rather than
+failing.
+
+### Three things that are conventions, not measurements
+
+- **`-k`, the number of articulations.** Silhouette scores decline monotonically with k on every
+  instrument tested — cajon 0.621 / 0.565 / 0.476 and boxstomp 0.571 / 0.549 / 0.484 for
+  k = 2/3/4 — because struck-percussion timbre is a continuum, not separated blobs. An
+  "automatic" k ships two articulations every time. 4 suits a cajon; boxstomp's one-hit material
+  is genuinely two sounds. Pick it from the instrument and read the warnings.
+- **The velocity layer count**, chosen per articulation: the most layers that keep every layer
+  under 9 dB with at least 5 round robins, relaxing the round-robin floor only when nothing
+  qualifies. The report says which floor it settled for.
+- **`_A`/`_B` when a same-timbre pass is split in two.** Which one is your *left* hand is not in
+  the audio — see below.
+
+### Two gain stages, and why both exist
+
+Sources are 32-bit float and routinely peak above 0 dBFS, so writing 24-bit PCM without gain
+staging clips every loud hit. First each **source is aligned** on its own loudest contribution,
+because a recorder gain change between takes otherwise masquerades as velocity — boxstomp's two
+files sat 41.4 dB apart while each held an identical 29.9 dB of real dynamics, and cajon's sat
+8.9 dB apart with ranges of 30.0 and 29.6 dB. Then **one gain for the whole kit** puts the
+loudest sample at −1 dBFS. Never per sample: that would erase the level relationships the
+velocity layers exist to encode.
+
+### Loops are found by onset density, not level
+
+A loop is a run of onsets that keep arriving; a one-hit is isolated. Timing survives a change of
+recording level and amplitude thresholds do not. An absolute −40 dBFS floor found nine loops in
+a file containing none, because on a +26 dBFS take the decay tails never drop below it so
+"silence" never happens. A relative floor fails from both ends too: the value that isolates hits
+fragments continuous playing, and one low enough to keep playing intact swallows a quiet file
+whole. Measured median inter-onset interval is **0.12 s inside loops and 1.31 s between
+one-hits** — an order of magnitude apart in the same session, with no knife edge in between.
+
+---
+
 ## What this deliberately does not do
 
 - **Phase correction.** The H1essential's X/Y capsules are coincident: L and R hit the same
@@ -297,8 +429,16 @@ default for a hand percussion instrument; record more hits and raise it.
   is no offset to remove. Polarity, balance and DC *are* checked — see above.
 - Both become real the day you add a second source — a phone video, a board feed, a second
   recorder. That's a separate script, not yet written.
-- **Classify hit types automatically.** Telling a kick from a slap is an audio-ML problem. The
-  one-pass-per-sound-type convention makes it unnecessary.
+- **Tell your left hand from your right.** Coincident capsules put both hands in the same place:
+  measured L/R balance across 140 cajon hits is 1.39 dB mean with 0.54 dB spread, unimodal, and
+  what variation there is tracks the *zone* struck rather than the hand. Same-timbre passes can
+  be split into `_A`/`_B` by their gap in time; naming them is yours to do.
+- **Decide how many articulations an instrument has.** See `-k` above. The tool clusters; the
+  count is a musical judgement and the code says so.
+- **Follow a tempo that changes on purpose.** One tempo is fitted per song. A deliberate push
+  into the last chorus is drift as far as the estimator is concerned, and warping it away is not
+  a fix. Nor does it decide the octave for you: 140 and 70 fit the same audio, so it shows the
+  number it picked and lets you type over it.
 
 ## Status
 
@@ -307,8 +447,13 @@ Honest state of testing, because "it's on GitHub and CI is green" is not the sam
 | | |
 |---|---|
 | Gap, onset and layer detection | **verified** — self-checks, plus the rehearsal detector run against a real 91-minute recording (14 songs, 2:17–5:59 each) |
-| Generated `.dspreset` | **verified** — parses under a real XML parser, velocity 1–127 covered with no gaps or overlaps |
+| Tempo and beat detection (`lib/tempo.lua`) | **verified outside REAPER** — self-checks, every assertion mutation-tested (13 mutations, 13 caught), plus the detector run offline over 69 minutes of real rehearsal audio: 9 songs, 66–171 BPM, 0.5–1.1 s of drift each |
+| Tempo alignment inside REAPER — the split, the second take, the stretch markers | **exercised against a stub, never run in REAPER.** The whole action was driven headless over a real 29-minute capture: 7 regions, 7 song items each with 2 takes, 3199 stretch markers, all of them item-relative and inside their take's slice of the source, identical whether the item sits at 0:00 or 5:00, and a second run reusing the item and take instead of splitting again. A stub cannot catch a `reaper.*` call REAPER rejects, and its own peak reader had to be corrected once before these numbers matched the audio |
+| `Tools/build_library.py` end to end | **verified by execution** on two real sessions — a 481 s cajon session (211 hits, 7 loops, 197 samples) and a 279 s boxstomp session (132 hits, 3 loops, 121 samples). Both pass the built-in gate: no missing or unreferenced samples, no velocity holes, every round-robin cycle complete, loudest sample exactly −1.0 dBFS, nothing clipped |
+| `cluster.lua` and `library.lua` | **verified** — every assertion mutation-tested: the guarded line was deleted, the self-check confirmed to fail, the line restored |
+| Generated `.dspreset` | **verified** — parses under a real XML parser, velocity 1–127 covered with no gaps or overlaps, on both libraries |
 | Generated `.sfz` | structurally asserted, **not yet loaded in a sampler** |
+| Whether either library *sounds* right | **not verified.** Nothing here has been listened to. The structural checks cannot hear a hit filed under the wrong articulation — and 21 cajon hits and 14 boxstomp hits sat far enough from every centroid to be parked for review, which is exactly the material worth hearing |
 | Input validation in every action | **verified by execution** against a REAPER stub: a negative duration or amount is refused before any undo block opens |
 | Library-load failure handling | **verified by execution** — a library that returns a non-table, or fails to parse, is reported instead of crashing mid-edit |
 | Everything else that calls `reaper.*` | **not yet run in REAPER.** Control flow is exercised against a stub; REAPER's own behaviour is not |
@@ -344,19 +489,56 @@ of bug twice, and both times it was invisible at 0:00:
 - `find_spans` returns offsets *from the start of the envelope*, not project time.
 - Undecided, same family: envelope point times inside an **automation item**. Assumed
   item-relative; undocumented either way. See *Status*.
+- Take **stretch markers** put three frames on one line: the beat times come back from
+  `lib/tempo.lua` measured from the start of the analysed span, a marker's position is measured
+  from the start of the *item*, and its source position is measured into the *source file* and
+  scaled by the take's playrate. All three coincide for an unsplit take at 0:00 played at 1×.
 
 Note the pattern — every one of these is a case where the API documentation is silent and the two
 frames coincide at zero. When you touch anything that converts between times, assume this is
 happening until you have checked at a non-zero position.
 
 Get either wrong and everything still looks perfect for an item starting at 0:00, because the
-two frames coincide there. Both bugs shipped. The check that catches them:
+two frames coincide there. Both bugs shipped. Two projects in the repo exist only to make this
+check one double-click — the item is already at 5:00 in both:
 
-1. Put a long recording on a track and **drag it to 5:00**.
+| | Item | For |
+|---|---|---|
+| `verify-offset.RPP` | `Media/260805-192929.WAV`, 91 min | regions and level riding |
+| `verify-tempo.RPP` | `Media/flor/260820-205840.WAV`, 29 min | tempo alignment: 7 songs, 66–171 BPM |
+
+Neither is committed with the audio — the `Media/` files are gitignored, so these open with an
+offline item unless you have the recordings. `*.RPP` is gitignored too, so a verification project
+only lands in the repo via `git add -f`; that is how `verify-offset.RPP` got there and how a third
+one would. The check itself:
+
+1. Open one of them, or put a long recording on a track and **drag it to 5:00**.
 2. Run *Split rehearsal recording into song regions*.
 3. Every region must start after 5:00. If the first one lands at 1:20 instead of 6:20, a
    coordinate frame is being mixed up.
 4. Move the item back to 0:00, re-run, and confirm the times shift by exactly 5:00.
+5. Undo back to one item, then run again with `Tempo-align songs = y`. On `verify-tempo.RPP` at
+   the default −40 dB threshold that is a known quantity, which is the point of shipping the
+   project:
+
+   ```
+   01   3:34   92 BPM   clarity 3.1   drift 0.72 s
+   02   8:20  140 BPM   clarity 4.3   drift 0.82 s
+   03   5:08  140 BPM   clarity 3.4   drift 0.64 s
+   04   3:25  118 BPM   clarity 3.3   drift 1.00 s   TAIL 0.6 s
+   05   1:59  171 BPM   clarity 3.7   drift 0.48 s
+   06   1:34   66 BPM   clarity 4.4   drift 1.14 s
+   07   1:43   86 BPM   clarity 2.4   drift 1.05 s   CHECK
+   ```
+
+   Then in the arrange: 13 items on the track — 7 songs with two takes each and 6 untouched
+   pieces between them — every song item on its region's bounds, take 2 showing stretch markers,
+   and `T` flipping between a take that is in time and one that is not. If the tempos match this
+   table but the audio comes out wrong, the bug is on the `reaper.*` side, which is the half no
+   self-check reaches.
+6. Select one aligned song and run it again. It must reuse that item and rewrite its aligned take
+   — no third take, no further split. The long item is gone by then, so this is what "re-run"
+   means once alignment has happened.
 
 The library self-check pins the pure half of this — a lead-in of silence must produce a span
 starting at ~5 s — but only running it in REAPER covers the `reaper.*` side.
@@ -432,3 +614,15 @@ and it would write into the repo.
 `Split percussion recording into hits` used to assume a take playrate of 1.0 and produced hits
 pointing at the wrong source position on a time-stretched take. It now maps offsets through the
 playrate and copies the rate and pitch settings onto each new take.
+
+## Unattended run
+
+`Tools/headless_run.lua` runs the split action with no dialogs (batch mode: ExtState
+`ReapeZoom/batch=1`), waits for peaks, saves and quits REAPER. Select the recording item, then:
+
+```sh
+reaper -nosplash Project.RPP Tools/headless_run.lua
+reaper -nosplash -renderproject Project.RPP
+```
+
+Messages go to `reapezoom-batch.log` beside the project. Settings are at the top of the runner.

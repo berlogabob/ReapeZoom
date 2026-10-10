@@ -172,6 +172,21 @@ function M.sweep_thresholds(env, rate, opts, deltas)
   return rows
 end
 
+-- Threshold chosen from the sweep instead of by hand: the first one (quietest
+-- first) whose song count is more than one and matches the next 5 dB up. A count
+-- that holds across two thresholds is the detector agreeing with itself; a count
+-- that changes is the noise floor still moving. Returns nil if nothing plateaus.
+function M.auto_threshold(env, rate, opts)
+  local prev
+  for t = -50, -20, 5 do
+    local n = #M.find_spans(env, rate, {
+      thresh = t, minGap = opts.minGap, minSpan = opts.minSpan, pad = opts.pad })
+    if prev and prev.n > 1 and prev.n == n then return prev.t end
+    prev = { t = t, n = n }
+  end
+  return nil
+end
+
 -- Loudest bucket in an envelope, linear. 0 for an empty one.
 function M.max_peak(env)
   local m = 0
@@ -448,6 +463,13 @@ function M.selftest()
   -- silence must give zero-count rows, not an error
   local ssw = M.sweep_thresholds(silent, rate, o, DELTAS)
   for _, r in ipairs(ssw) do assert(r.count == 0, "silence produced spans") end
+
+  -- auto_threshold: the fixture has 2 songs at every sane threshold
+  local at = M.auto_threshold(env, rate, o)
+  assert(at and at <= 0, "auto threshold found nothing on a clean fixture")
+  assert(#M.find_spans(env, rate, { thresh = at, minGap = o.minGap, minSpan = o.minSpan, pad = o.pad }) == 2,
+    "auto threshold must land where the song count is right")
+  assert(M.auto_threshold(silent, rate, o) == nil, "silence has no plateau to pick")
 
   -- max_peak ----------------------------------------------------------
   assert(M.max_peak({}) == 0, "empty envelope has no peak")
