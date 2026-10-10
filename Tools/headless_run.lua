@@ -3,10 +3,17 @@
 -- settings, wait for peaks, run the action, save the project, quit REAPER.
 --   reaper -nosplash <project>.RPP Tools/headless_run.lua
 -- The recording item must be selected in the project. Edit SETTINGS per take.
-local SETTINGS = { thresh = "auto", minGap = "8", minSong = "90", pad = "1.0", render = "y", align = "n" }
+-- REAPEZOOM_STEPS picks the actions, in order: split, master, check
+-- (default "split,master"; "check" measures the rendered files afterwards).
+local SETTINGS = { thresh = "auto", minGap = "8", minSong = "90", pad = "1.0", render = "y", align = "n",
+                   mPreset = "mp3", mChain = "y", mTrim = "y" }
+local STEPS = {
+  split = "berloga_Split rehearsal recording into song regions.lua",
+  master = "berloga_Master songs.lua",
+  check = "berloga_Master songs.lua",
+}
 local EXT = "ReapeZoom"
 local here = ({ reaper.get_action_context() })[2]:match("^(.*)[/\\]")
-local ACTION = here .. "/../Scripts/berloga_Split rehearsal recording into song regions.lua"
 
 local item = reaper.GetSelectedMediaItem(0, 0)
 local take = item and reaper.GetActiveTake(item)
@@ -24,15 +31,23 @@ local function peaks_at(t)
   return false
 end
 
+local function run_step(name)
+  local action = here .. "/../Scripts/" .. STEPS[name]
+  reaper.SetExtState(EXT, "mMode", name == "check" and "check" or "apply", false)
+  -- the action finds lib/ next to the script it believes it is
+  local real = reaper.get_action_context
+  reaper.get_action_context = function() return false, action end
+  local ok, err = pcall(dofile, action)
+  reaper.get_action_context = real
+  if not ok then reaper.ShowConsoleMsg(tostring(err) .. "\n") end
+end
+
 local function run()
   reaper.SetExtState(EXT, "batch", "1", false)
   for k, v in pairs(SETTINGS) do reaper.SetExtState(EXT, k, v, false) end
-  -- the action finds lib/ next to the script it believes it is
-  local real = reaper.get_action_context
-  reaper.get_action_context = function() return false, ACTION end
-  local ok, err = pcall(dofile, ACTION)
-  reaper.get_action_context = real
-  if not ok then reaper.ShowConsoleMsg(tostring(err) .. "\n") end
+  for name in (os.getenv("REAPEZOOM_STEPS") or "split,master"):gmatch("[^,]+") do
+    if STEPS[name] then run_step(name) end
+  end
   reaper.DeleteExtState(EXT, "batch", false)
   reaper.Main_SaveProject(0, false)
   reaper.Main_OnCommand(40004, 0) -- File: Quit REAPER

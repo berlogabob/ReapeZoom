@@ -1,6 +1,6 @@
 -- @description ReapeZoom
 -- @author berlogabob
--- @version 2.7
+-- @version 2.8
 -- @link https://github.com/berlogabob/ReapeZoom
 -- @provides
 --   [main] .
@@ -8,8 +8,10 @@
 --   [main] berloga_Check stereo and phase.lua
 --   [main] berloga_Split percussion recording into hits.lua
 --   [main] berloga_Build sampler preset from tracks.lua
+--   [main] berloga_Master songs.lua
 --   [nomain] lib/envelope.lua
 --   [nomain] lib/level.lua
+--   [nomain] lib/master.lua
 --   [nomain] lib/preset.lua
 --   [nomain] lib/stereo.lua
 --   [nomain] lib/tempo.lua
@@ -35,6 +37,9 @@
 --   **Split percussion recording into hits** — a pass-per-sound-type recording
 --   becomes one track per sound type, one item per hit.
 --
+--   **Master songs** — loudness preset, master-bus compressor and limiter, and a
+--   check of the rendered files against the target.
+--
 --   **Build sampler preset from tracks** — measures every hit, sorts it into
 --   velocity layers and round robins, lays the matrix out on the arrange grid
 --   for review, and writes both `.sfz` and `.dspreset`.
@@ -42,6 +47,10 @@
 --   Thresholds are relative to the material's own peak, so they work on quiet
 --   32-bit-float captures without recalibration.
 -- @changelog
+--   New action Master songs: loudness presets (mp3 / streaming / apple / archive), item
+--   trim to the level the chain expects, a stock ReaComp + ReaLimit master chain, and a
+--   check mode that measures every rendered file (LUFS-I, true peak) against the preset.
+--   MP3 presets limit 1 dB lower so the encode cannot push true peak over the target.
 --   Split rehearsal: batch mode for unattended runs, threshold "auto" picked from the
 --   sweep, regions named after the recording file, render folder set, MP3 320 render
 --   format (ExtState format=wav for 24-bit WAV), and still-building peaks reported

@@ -615,6 +615,27 @@ and it would write into the repo.
 pointing at the wrong source position on a time-stretched take. It now maps offsets through the
 playrate and copies the rate and pitch settings onto each new take.
 
+## Mastering: `Master songs`
+
+One action, two modes. **apply** picks a preset, trims the selected item so the master chain sees
+-18 LUFS (a hot float capture otherwise slams the limiter), adds `ReapeZoom ReaComp` (2:1, -20 dB,
+30/250 ms) and `ReapeZoom ReaLimit` to the master bus, and sets the render. Re-running updates the
+same plug-ins instead of stacking them. Item volume is set absolutely, so it also does not trim
+twice. **check** measures every `.wav`/`.mp3` in the render folder and writes
+`ReapeZoom-masters.txt` with a verdict per file.
+
+| Preset | Target | Ceiling | Format |
+|---|---|---|---|
+| `mp3` | -14 LUFS-I | -2.0 dBTP | MP3 320 |
+| `streaming` | -14 LUFS-I | -1.0 dBTP | WAV 24 |
+| `apple` | -16 LUFS-I | -1.0 dBTP | WAV 24 |
+| `archive` | -18 LUFS-I | -1.0 dBTP | WAV 24 |
+
+The MP3 ceiling is 1 dB lower on purpose: the encoder overshoots the limiter by up to ~0.6 dB, and
+the check holds files to -1.0 dBTP. On the reference take this took true peak from -0.5…-0.8 to
+-1.6…-1.8 dBTP. No EQ stage: ReaEQ exposes no band-enable parameter to a script. Measurements use
+`CalculateNormalization` and agree with ffmpeg `ebur128` to 0.1.
+
 ## Unattended run
 
 `Tools/headless_run.lua` runs the split action with no dialogs (batch mode: ExtState
@@ -625,4 +646,5 @@ reaper -nosplash Project.RPP Tools/headless_run.lua
 reaper -nosplash -renderproject Project.RPP
 ```
 
+Steps run in order (`REAPEZOOM_STEPS=split,master` by default; `check` measures the render).
 Messages go to `reapezoom-batch.log` beside the project. Settings are at the top of the runner.
