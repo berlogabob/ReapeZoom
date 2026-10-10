@@ -1,6 +1,6 @@
 -- @description ReapeZoom
 -- @author berlogabob
--- @version 2.8
+-- @version 2.9
 -- @link https://github.com/berlogabob/ReapeZoom
 -- @provides
 --   [main] .
@@ -9,6 +9,7 @@
 --   [main] berloga_Split percussion recording into hits.lua
 --   [main] berloga_Build sampler preset from tracks.lua
 --   [main] berloga_Master songs.lua
+--   [main] berloga_Rehearsal to masters.lua
 --   [nomain] lib/envelope.lua
 --   [nomain] lib/level.lua
 --   [nomain] lib/master.lua
@@ -47,6 +48,10 @@
 --   Thresholds are relative to the material's own peak, so they work on quiet
 --   32-bit-float captures without recalibration.
 -- @changelog
+--   Split rehearsal: preview lists every song with start, end and length; a format field
+--   (mp3/wav) in the dialog; a "name the songs" step so files get real titles; waits for
+--   peaks instead of asking you to retry; runs over every selected item.
+--   New action Rehearsal to masters: stereo check, split, level ride, master and render in one go.
 --   New action Master songs: loudness presets (mp3 / streaming / apple / archive), item
 --   trim to the level the chain expects, a stock ReaComp + ReaLimit master chain, and a
 --   check mode that measures every rendered file (LUFS-I, true peak) against the preset.
@@ -258,6 +263,16 @@ local function preview_text(env, opts)
     end
   end
   lines[#lines + 1] = ""
+  -- the songs themselves, so a split at the wrong place is visible before it is made
+  local songs = E.find_spans(env, PEAKRATE, opts)
+  for i, sp in ipairs(songs) do
+    if i > 12 then
+      lines[#lines + 1] = ("... and %d more"):format(#songs - 12)
+      break
+    end
+    lines[#lines + 1] = ("%02d   %s - %s   (%s)"):format(i, mmss(sp.s), mmss(sp.e), mmss(sp.e - sp.s))
+  end
+  lines[#lines + 1] = ""
   lines[#lines + 1] = ("Min song length is %g s -- anything shorter was already discarded.")
     :format(opts.minSpan)
   lines[#lines + 1] = "Raise it to reject noodling; raise min gap if one song splits in half."
@@ -284,7 +299,8 @@ end
 
 local function detect_tempos(take, songs)
   local tempos = {}
-  for _, s in ipairs(songs) do
+  for i, s in ipairs(songs) do
+    if not BATCH then reaper.ShowConsoleMsg(("Tempo: song %d of %d\n"):format(i, #songs)) end
     local env = E.read_envelope(take, s.s, s.e - s.s, BEATRATE)
     local strength = T.onset_strength(env)
     local est = T.tempo(strength, BEATRATE)
@@ -506,13 +522,9 @@ local function align_songs(item, songs, tempos)
   return report
 end
 
-local function main()
-  local item = reaper.GetSelectedMediaItem(0, 0)
-  if not item and reaper.CountMediaItems(0) == 1 then item = reaper.GetMediaItem(0, 0) end
-  if not item then
-    MB("Select the rehearsal item first.", "Split rehearsal", 0)
-    return
-  end
+-- Splits one item. Returns false only when the user cancelled, so a batch of
+-- several selected items stops there instead of asking about the rest.
+local function run(item)
   local take = reaper.GetActiveTake(item)
   if not take or reaper.TakeIsMIDI(take) then
     MB("Selected item has no audio take.", "Split rehearsal", 0)
@@ -550,19 +562,21 @@ local function main()
     get_setting("pad", "1.0"),
     get_setting("render", "y"),
     get_setting("align", "n"),
+    get_setting("format", "mp3"),
   }
   local opts, do_render, do_align
   while true do
-    local ok, csv = ask("Split rehearsal into song regions", 6,
+    local ok, csv = ask("Split rehearsal into song regions", 7,
       "Threshold (dB below item peak, or auto),Min gap between songs (s),Min song length (s)," ..
       "Region padding (s),Set streaming render settings (y/n),Tempo-align songs (y/n)," ..
+      "Render format (mp3/wav)," ..
       "extrawidth=60",
       table.concat(vals, ","))
-    if not ok then return end
+    if not ok then return false end
 
     local f = {}
     for v in csv:gmatch("[^,]*") do f[#f + 1] = v end
-    for i = 1, 6 do vals[i] = f[i] or vals[i] end
+    for i = 1, 7 do vals[i] = f[i] or vals[i] end
 
     opts = {
       thresh = tonumber(f[1]), minGap = tonumber(f[2]),
@@ -579,6 +593,7 @@ local function main()
     end
     do_render = (f[5] or ""):lower():sub(1, 1) == "y"
     do_align = (f[6] or ""):lower():sub(1, 1) == "y"
+    local fmt = (f[7] or ""):lower():match("^%s*(%w*)%s*$")
 
     -- Validation sends you back to the dialog rather than out of the script:
     -- losing four correct fields because the fifth had a typo is its own bug.
@@ -589,15 +604,17 @@ local function main()
       -- A negative pad walks the two ends of a span past each other, and
       -- AddProjectMarker2 then gets a region whose end precedes its start.
       bad = "Min gap, min song length and padding cannot be negative."
+    elseif fmt ~= "mp3" and fmt ~= "wav" then
+      bad = "Render format must be mp3 or wav."
     elseif opts.thresh > 0 then
       bad = "Threshold is dB BELOW the item peak, so it must be zero or negative."
     end
     if bad then
-      if MB(bad .. "\n\nGo back and change it?", "Split rehearsal", 1) ~= 1 then return end
+      if MB(bad .. "\n\nGo back and change it?", "Split rehearsal", 1) ~= 1 then return false end
     else
       local answer = MB(preview_text(env, opts), "Split rehearsal -- what these settings find", 3)
       if answer == 6 then break end   -- yes: use these
-      if answer == 2 then return end  -- cancel: nothing written
+      if answer == 2 then return false end  -- cancel: nothing written
       -- no: round again with the same values prefilled
     end
   end
@@ -608,6 +625,7 @@ local function main()
   reaper.SetExtState(EXT, "pad", tostring(opts.pad), true)
   reaper.SetExtState(EXT, "render", do_render and "y" or "n", true)
   reaper.SetExtState(EXT, "align", do_align and "y" or "n", true)
+  reaper.SetExtState(EXT, "format", (vals[7] or "mp3"):lower():match("%w+") or "mp3", true)
 
   local songs = E.find_spans(env, PEAKRATE, opts)
   -- find_spans measures from the start of the envelope, which began at
@@ -639,9 +657,18 @@ local function main()
       -- previous dialog and are worth having on their own.
       if answer == 2 then do_align = false; break end
       local edited = edit_tempos(songs, tempos)
-      if edited == nil then return end
+      if edited == nil then return false end
       -- cancelling the editor returns to this preview; a valid edit redraws it
     end
+  end
+
+  -- Titles go in now, so the region names -- and the rendered file names -- are
+  -- right the first time. Blank keeps the numbered default; cancel does too.
+  local titles = {}
+  if not BATCH then
+    local got, csv = reaper.GetUserInputs("Name the songs", 1,
+      ("Titles in order, %d songs (comma-separated; blank = numbered),extrawidth=300"):format(#songs), "")
+    if got then for t in csv:gmatch("[^,]+") do titles[#titles + 1] = t:match("^%s*(.-)%s*$") end end
   end
 
   reaper.Undo_BeginBlock()
@@ -649,7 +676,8 @@ local function main()
 
   local removed, ids = clear_own_regions(item_pos, item_end)
   for i, s in ipairs(songs) do
-    ids[#ids + 1] = reaper.AddProjectMarker2(0, true, s.s, s.e, ("%s %02d"):format(prefix, i), -1, 0)
+    ids[#ids + 1] = reaper.AddProjectMarker2(0, true, s.s, s.e,
+      (titles[i] and titles[i] ~= "") and ("%02d %s"):format(i, titles[i]) or ("%s %02d"):format(prefix, i), -1, 0)
   end
   reaper.SetProjExtState(0, EXT, "regions", table.concat(ids, ","))
 
@@ -662,7 +690,8 @@ local function main()
 
   local msg = { ("%d songs found."):format(#songs) }
   if removed > 0 then msg[#msg + 1] = ("Replaced %d regions from a previous run."):format(removed) end
-  msg[#msg + 1] = "\nRename them in View > Region/Marker Manager, then render."
+  msg[#msg + 1] = #titles > 0 and "\nSongs named. Render when ready."
+    or "\nRename them in View > Region/Marker Manager, then render."
   if do_render then
     msg[#msg + 1] = #changed == 0 and "\nRender settings were already correct."
       or ("\nRender settings changed:\n  " .. table.concat(changed, "\n  "))
@@ -672,6 +701,53 @@ local function main()
     msg[#msg + 1] = "T switches between the aligned take and the original."
   end
   MB(table.concat(msg, "\n"), "Split rehearsal", 0)
+end
+
+-- Peaks that are still building read back as zeros. Instead of telling the user
+-- to come back later, wait for them and carry on. Not in batch mode: the
+-- unattended runner has its own wait, and a deferred wait would let it save and
+-- quit REAPER before this action had finished.
+local function peaks_ready(item)
+  local take = reaper.GetActiveTake(item)
+  if not take or reaper.TakeIsMIDI(take) then return true end
+  local pos = reaper.GetMediaItemInfo_Value(item, "D_POSITION")
+  local len = reaper.GetMediaItemInfo_Value(item, "D_LENGTH")
+  local buf = reaper.new_array(100 * 2 * 3)
+  local function at(t)
+    buf.clear()
+    reaper.GetMediaItemTake_Peaks(take, 20, t, 2, 100, 0, buf)
+    for i = 1, 200 do if math.abs(buf[i]) > 0 then return true end end
+    return false
+  end
+  return at(pos + math.min(1, len / 2)) and at(math.max(pos, pos + len - 10))
+end
+
+local function process(items, i)
+  local item = items[i]
+  if not item then return end
+  local function go()
+    if run(item) == false then return end
+    process(items, i + 1)
+  end
+  if BATCH or peaks_ready(item) then return go() end
+  reaper.ShowConsoleMsg("Waiting for REAPER to build peaks...\n")
+  local deadline = reaper.time_precise() + 900
+  local function poll()
+    if peaks_ready(item) or reaper.time_precise() > deadline then go() else reaper.defer(poll) end
+  end
+  poll()
+end
+
+local function main()
+  -- every selected item, so a night of recordings is one run, not one per file
+  local items = {}
+  for i = 0, reaper.CountSelectedMediaItems(0) - 1 do items[#items + 1] = reaper.GetSelectedMediaItem(0, i) end
+  if #items == 0 and reaper.CountMediaItems(0) == 1 then items[1] = reaper.GetMediaItem(0, 0) end
+  if #items == 0 then
+    MB("Select the rehearsal item first.", "Split rehearsal", 0)
+    return
+  end
+  process(items, 1)
 end
 
 main()

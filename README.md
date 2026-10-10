@@ -615,6 +615,17 @@ and it would write into the repo.
 pointing at the wrong source position on a time-stretched take. It now maps offsets through the
 playrate and copies the rate and pitch settings onto each new take.
 
+## Working in the REAPER GUI
+
+- **Preview** lists every song with start, end and length, not just counts.
+- **Render format** (mp3/wav) is a field in the dialog.
+- **Name the songs** asks for titles in order after you accept the preview; blank keeps the
+  numbered names. Titles become `01 Title`, which is also the file name.
+- **Peaks** still building: the action waits and carries on instead of asking you to retry.
+- **Several selected items** are processed in turn; cancelling one dialog stops the rest.
+- **`Rehearsal to masters`** walks stereo check, split, level ride, master, render and the final
+  check, with an OK/Cancel prompt before each step. Each step keeps its own dialog.
+
 ## Mastering: `Master songs`
 
 One action, two modes. **apply** picks a preset, trims the selected item so the master chain sees
